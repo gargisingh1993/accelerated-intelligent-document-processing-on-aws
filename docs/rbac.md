@@ -71,9 +71,13 @@ PRICING
 
 ## Enforcement Layers
 
-### Layer 1: AppSync Schema Auth Directives (Server-Side)
+### Layer 1: AppSync Schema Auth Directives (Server-Side — Mutations Only)
 
-Every GraphQL mutation and sensitive query has `@aws_auth(cognito_groups: [...])` directives that enforce access at the AppSync level. If a user's Cognito group is not in the allowed list, AppSync returns an **Unauthorized** error before any resolver code runs.
+Every GraphQL **mutation** has `@aws_auth(cognito_groups: [...])` directives that enforce write access at the AppSync level. If a user's Cognito group is not in the allowed list, AppSync returns an **Unauthorized** error before any resolver code runs.
+
+**Important**: `@aws_auth` directives are applied to **Mutations only**, not Queries. This is because AppSync's `@aws_auth` on individual Query fields overrides the type-level `@aws_cognito_user_pools` directive and conflicts with the `DefaultAction: ALLOW` configuration. Read access for Queries is controlled by:
+- **UI navigation** (which features are visible per role)
+- **Server-side resolver filtering** (e.g., reviewer document filtering in Lambda)
 
 Example:
 ```graphql
@@ -81,9 +85,15 @@ Example:
 deleteConfigVersion(versionName: String!): UpdateConfigurationResponse
   @aws_auth(cognito_groups: ["Admin"])
 
-# Admin + Author can delete documents
+# Admin + Author can delete documents  
 deleteDocument(objectKeys: [String!]!): Boolean!
   @aws_auth(cognito_groups: ["Admin", "Author"])
+
+# Queries inherit type-level auth (all authenticated users)
+type Query @aws_cognito_user_pools @aws_iam {
+  getConfigVersion(versionName: String!): ConfigurationResponse  # No field-level auth
+  ...
+}
 ```
 
 ### Layer 2: Server-Side Document Filtering (Resolver-Level)

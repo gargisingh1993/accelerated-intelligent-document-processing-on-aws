@@ -709,8 +709,14 @@ type DocumentCount @aws_cognito_user_pools @aws_iam {
   count: Int!
 }
 
+# RBAC for Queries:
+# Query-level auth uses the type-level @aws_cognito_user_pools @aws_iam (all authenticated users).
+# This is intentional: read access is allowed for all authenticated users, while the UI navigation
+# controls which features are visible per role. Write operations are restricted via Mutation-level
+# @aws_auth directives. Server-side filtering (e.g., reviewer document filtering) is enforced in
+# Lambda resolvers, not at the schema level.
 type Query @aws_cognito_user_pools @aws_iam {
-  # All authenticated users - document viewing (server-side role filtering in resolver)
+  # Document queries - all authenticated users (reviewer filtering done in resolver)
   getDocument(ObjectKey: ID!): Document
   listDocuments(
     startDateTime: AWSDateTime
@@ -733,85 +739,54 @@ type Query @aws_cognito_user_pools @aws_iam {
   getFileContents(s3Uri: String!): FileContentsResponse
   getStepFunctionExecution(executionArn: String!): StepFunctionExecutionResponse
 
-  # Admin + Author + Viewer (configuration & pricing - read access)
+  # Configuration & pricing queries
   getConfigVersions: ConfigurationVersionsResponse
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
-    @aws_iam
   getConfigVersion(versionName: String!): ConfigurationResponse
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
-    @aws_iam
   getPricing: PricingResponse
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
-    @aws_iam
-  calculateCapacity(input: String!): CapacityResult
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
+  calculateCapacity(input: String!): CapacityResult @aws_cognito_user_pools
 
-  # Admin + Author + Viewer (Agent Chat & Code Explorer)
-  listAvailableAgents: [Agent]
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
-    @aws_iam
-  getAgentChatMessages(sessionId: ID!): [AgentChatMessage]
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
-    @aws_iam
-  listChatSessions(limit: Int, nextToken: String): ChatSessionConnection
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
-    @aws_iam
-  getChatMessages(sessionId: ID!): [AgentChatMessage]
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
-    @aws_iam
+  # Agent Chat & Code Explorer queries
+  listAvailableAgents: [Agent] @aws_cognito_user_pools @aws_iam
+  getAgentChatMessages(sessionId: ID!): [AgentChatMessage] @aws_cognito_user_pools @aws_iam
+  listChatSessions(limit: Int, nextToken: String): ChatSessionConnection @aws_cognito_user_pools @aws_iam
+  getChatMessages(sessionId: ID!): [AgentChatMessage] @aws_cognito_user_pools @aws_iam
 
-  # Admin + Author (knowledge base & document chat)
+  # Knowledge base & document chat queries
   queryKnowledgeBase(input: String!, sessionId: String): String
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
   chatWithDocument(
     s3Uri: String!
     prompt: String!
     history: AWSJSON!
     modelId: String!
   ): String
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
 
-  # Admin + Author (discovery)
+  # Discovery queries
   listDiscoveryJobs: DiscoveryJobList
-    @aws_auth(cognito_groups: ["Admin", "Author"])
 
-  # Admin + Author (old agent query system)
-  submitAgentQuery(query: String!, agentIds: [String!]!): AgentJob
-    @aws_auth(cognito_groups: ["Admin", "Author"])
-  getAgentJobStatus(jobId: ID!): AgentJob
-    @aws_auth(cognito_groups: ["Admin", "Author"])
-  listAgentJobs(limit: Int, nextToken: String): AgentJobConnection
-    @aws_auth(cognito_groups: ["Admin", "Author"])
+  # Agent query system
+  submitAgentQuery(query: String!, agentIds: [String!]!): AgentJob @aws_cognito_user_pools
+  getAgentJobStatus(jobId: ID!): AgentJob @aws_cognito_user_pools
+  listAgentJobs(limit: Int, nextToken: String): AgentJobConnection @aws_cognito_user_pools
 
-  # Admin + Author (Test Studio)
-  getTestRun(testRunId: String!): TestRun
-    @aws_auth(cognito_groups: ["Admin", "Author"])
-  getTestRuns(timePeriodHours: Int, startDateTime: AWSDateTime, endDateTime: AWSDateTime): [TestRun]
-    @aws_auth(cognito_groups: ["Admin", "Author"])
-  getTestRunStatus(testRunId: String!): TestRunStatus
-    @aws_auth(cognito_groups: ["Admin", "Author"])
-  compareTestRuns(testRunIds: [String!]!): TestRunComparison
-    @aws_auth(cognito_groups: ["Admin", "Author"])
-  getTestSets: [TestSet]
-    @aws_auth(cognito_groups: ["Admin", "Author"])
-  listBucketFiles(bucketType: String!, filePattern: String!): [String]
-    @aws_auth(cognito_groups: ["Admin", "Author"])
-  validateTestFileName(fileName: String!): TestSetValidationResponse
-    @aws_auth(cognito_groups: ["Admin", "Author"])
+  # Test Studio queries
+  getTestRun(testRunId: String!): TestRun @aws_cognito_user_pools
+  getTestRuns(timePeriodHours: Int, startDateTime: AWSDateTime, endDateTime: AWSDateTime): [TestRun] @aws_cognito_user_pools
+  getTestRunStatus(testRunId: String!): TestRunStatus @aws_cognito_user_pools
+  compareTestRuns(testRunIds: [String!]!): TestRunComparison @aws_cognito_user_pools
+  getTestSets: [TestSet] @aws_cognito_user_pools
+  listBucketFiles(bucketType: String!, filePattern: String!): [String] @aws_cognito_user_pools
+  validateTestFileName(fileName: String!): TestSetValidationResponse @aws_cognito_user_pools
 
-  # Admin + Author (Configuration Library)
-  listConfigurationLibrary(pattern: String!): ConfigurationLibraryResponse
-    @aws_auth(cognito_groups: ["Admin", "Author"])
+  # Configuration Library queries
+  listConfigurationLibrary(pattern: String!): ConfigurationLibraryResponse @aws_cognito_user_pools
   getConfigurationLibraryFile(
     pattern: String!
     configName: String!
     fileName: String!
-  ): ConfigurationLibraryFileResponse
-    @aws_auth(cognito_groups: ["Admin", "Author"])
+  ): ConfigurationLibraryFileResponse @aws_cognito_user_pools
 
-  # Admin only (User Management)
-  listUsers: UserList
-    @aws_auth(cognito_groups: ["Admin"])
+  # User Management query
+  listUsers: UserList @aws_cognito_user_pools
 }
 
 type Subscription @aws_cognito_user_pools @aws_iam {
