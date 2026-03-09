@@ -1,7 +1,11 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 
-"""Lambda function for user management operations with DynamoDB storage and Cognito sync."""
+"""Lambda function for user management operations with DynamoDB storage and Cognito sync.
+
+Supports four roles (Cognito groups): Admin, Author, Reviewer, Viewer.
+Users can optionally have allowedConfigVersions for config-version scoping.
+"""
 
 import logging
 import os
@@ -21,8 +25,18 @@ cognito = boto3.client("cognito-idp")
 USERS_TABLE_NAME = os.environ.get("USERS_TABLE_NAME", "")
 USER_POOL_ID = os.environ.get("USER_POOL_ID", "")
 ADMIN_GROUP = os.environ.get("ADMIN_GROUP", "Admin")
+AUTHOR_GROUP = os.environ.get("AUTHOR_GROUP", "Author")
 REVIEWER_GROUP = os.environ.get("REVIEWER_GROUP", "Reviewer")
+VIEWER_GROUP = os.environ.get("VIEWER_GROUP", "Viewer")
 ALLOWED_SIGNUP_EMAIL_DOMAINS = os.environ.get("ALLOWED_SIGNUP_EMAIL_DOMAINS", "")
+
+# Valid personas map to Cognito group names
+VALID_PERSONAS = {
+    "Admin": ADMIN_GROUP,
+    "Author": AUTHOR_GROUP,
+    "Reviewer": REVIEWER_GROUP,
+    "Viewer": VIEWER_GROUP,
+}
 
 
 def handler(event, context):
@@ -46,6 +60,7 @@ def create_user(args):
     """Create user in DynamoDB and sync to Cognito."""
     email = args["email"]
     persona = args["persona"]
+    allowed_config_versions = args.get("allowedConfigVersions")
     user_id = str(uuid.uuid4())
 
     # Validate email format
@@ -68,9 +83,11 @@ def create_user(args):
                     f"Allowed domains: {', '.join(allowed_domains)}"
                 )
 
-    # Validate persona
-    if persona not in ["Admin", "Reviewer"]:
-        raise ValueError(f"Invalid persona: {persona}. Must be 'Admin' or 'Reviewer'")
+    # Validate persona - support all four roles
+    if persona not in VALID_PERSONAS:
+        raise ValueError(
+            f"Invalid persona: {persona}. Must be one of: {', '.join(VALID_PERSONAS.keys())}"
+        )
 
     logger.info(f"Creating user with email {email} and persona {persona}")
 
@@ -96,6 +113,10 @@ def create_user(args):
         "updatedAt": datetime.utcnow().isoformat() + "Z",
     }
 
+    # Store allowedConfigVersions if provided (Phase 2 - config-version scoping)
+    if allowed_config_versions is not None:
+        user_record["allowedConfigVersions"] = allowed_config_versions
+
     table.put_item(Item=user_record)
 
     # Sync to Cognito
@@ -108,13 +129,16 @@ def create_user(args):
         raise e
 
     logger.info(f"User {email} created successfully")
-    return {
+    result = {
         "userId": user_id,
         "email": email,
         "persona": persona,
         "status": "active",
         "createdAt": user_record["createdAt"],
     }
+    if allowed_config_versions is not None:
+        result["allowedConfigVersions"] = allowed_config_versions
+    return result
 
 
 def delete_user(args):
@@ -157,6 +181,22 @@ def format_datetime(dt_str):
     return dt_str + "Z"
 
 
+def _determine_persona_from_groups(groups):
+    """Determine persona from Cognito groups, using highest precedence."""
+    group_names = [g["GroupName"] for g in groups]
+    # Check in precedence order
+    if ADMIN_GROUP in group_names:
+        return "Admin"
+    if AUTHOR_GROUP in group_names:
+        return "Author"
+    if REVIEWER_GROUP in group_names:
+        return "Reviewer"
+    if VIEWER_GROUP in group_names:
+        return "Viewer"
+    # Default to Viewer for users with no recognized group
+    return "Viewer"
+
+
 def list_users():
     """List all users - sync from Cognito first, then return from DynamoDB."""
     logger.info("Listing all users")
@@ -174,15 +214,17 @@ def list_users():
 
     users = []
     for item in response.get("Items", []):
-        users.append(
-            {
-                "userId": item["userId"],
-                "email": item["email"],
-                "persona": item["persona"],
-                "status": item.get("status", "active"),
-                "createdAt": format_datetime(item.get("createdAt")),
-            }
-        )
+        user = {
+            "userId": item["userId"],
+            "email": item["email"],
+            "persona": item["persona"],
+            "status": item.get("status", "active"),
+            "createdAt": format_datetime(item.get("createdAt")),
+        }
+        # Include allowedConfigVersions if present
+        if "allowedConfigVersions" in item:
+            user["allowedConfigVersions"] = item["allowedConfigVersions"]
+        users.append(user)
 
     # Sort by creation date (newest first)
     users.sort(key=lambda x: x.get("createdAt") or "", reverse=True)
@@ -228,14 +270,12 @@ def sync_cognito_users_to_dynamodb():
                 groups_response = cognito.admin_list_groups_for_user(
                     Username=username, UserPoolId=USER_POOL_ID
                 )
-                persona = "Reviewer"
-                for group in groups_response.get("Groups", []):
-                    if group["GroupName"] == ADMIN_GROUP:
-                        persona = "Admin"
-                        break
+                persona = _determine_persona_from_groups(
+                    groups_response.get("Groups", [])
+                )
             except Exception as e:
                 logger.warning(f"Could not get groups for user {username}: {e}")
-                persona = "Reviewer"
+                persona = "Viewer"
 
             # Create user record in DynamoDB
             user_id = str(uuid.uuid4())
@@ -275,13 +315,15 @@ def sync_user_to_cognito(user_id, email, persona, operation):
             DesiredDeliveryMediums=["EMAIL"],
         )
 
-        # Add to appropriate group
-        group_name = ADMIN_GROUP if persona.lower() == "admin" else REVIEWER_GROUP
-        cognito.admin_add_user_to_group(
-            UserPoolId=USER_POOL_ID, Username=email, GroupName=group_name
-        )
-
-        logger.info(f"User {email} synced to Cognito and added to group {group_name}")
+        # Add to appropriate Cognito group based on persona
+        group_name = VALID_PERSONAS.get(persona)
+        if group_name:
+            cognito.admin_add_user_to_group(
+                UserPoolId=USER_POOL_ID, Username=email, GroupName=group_name
+            )
+            logger.info(f"User {email} synced to Cognito and added to group {group_name}")
+        else:
+            logger.warning(f"Unknown persona '{persona}' - user created without group assignment")
 
     elif operation == "delete":
         # Delete user from Cognito

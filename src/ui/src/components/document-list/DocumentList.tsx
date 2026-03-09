@@ -59,7 +59,7 @@ const DocumentList = (): React.JSX.Element => {
   const [isDateRangeModalVisible, setIsDateRangeModalVisible] = useState(false);
   const [currentUsername, setCurrentUsername] = useState('');
   const { settings: _settings } = useSettingsContext() as Record<string, unknown>;
-  const { isReviewer, isAdmin } = useUserRole();
+  const { isAdmin, isReviewerOnly, canWrite, canReview } = useUserRole();
   const navigate = useNavigate();
 
   // Get current username on mount
@@ -106,8 +106,11 @@ const DocumentList = (): React.JSX.Element => {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Filter documents for reviewers - show only pending HITL reviews (not completed/skipped)
+  // Note: Server-side RBAC filtering is now applied in the listDocuments resolver.
+  // Reviewer-only users receive only HITL-pending + their own completed reviews from the API.
+  // This client-side filter is kept as a secondary safety net but is no longer the primary enforcement.
   const filteredDocumentList = useMemo(() => {
-    if (isReviewer && !isAdmin) {
+    if (isReviewerOnly) {
       return documentList.filter((doc) => {
         // Must have HITL triggered
         if (!doc.hitlTriggered) return false;
@@ -121,11 +124,11 @@ const DocumentList = (): React.JSX.Element => {
       });
     }
     return documentList;
-  }, [documentList, isReviewer, isAdmin, currentUsername]);
+  }, [documentList, isReviewerOnly, currentUsername]);
 
   // Custom empty state for reviewers
   const emptyState = useMemo(() => {
-    if (isReviewer && !isAdmin) {
+    if (isReviewerOnly) {
       return (
         <Box margin={{ vertical: 'xs' }} textAlign="center" color="inherit">
           <SpaceBetween size="xxs">
@@ -140,7 +143,7 @@ const DocumentList = (): React.JSX.Element => {
       );
     }
     return <TableEmptyState resourceName="Document" />;
-  }, [isReviewer, isAdmin]);
+  }, [isReviewerOnly]);
 
   // prettier-ignore
   const {
@@ -335,10 +338,10 @@ const DocumentList = (): React.JSX.Element => {
               }));
               exportToExcel(exportData, 'Document-List');
             }}
-            onReprocess={isReviewer && !isAdmin ? null : () => setIsReprocessModalVisible(true)}
-            onDelete={isReviewer && !isAdmin ? null : () => setIsDeleteModalVisible(true)}
-            onAbort={isReviewer && !isAdmin ? null : () => setIsAbortModalVisible(true)}
-            onClaimReview={isReviewer ? handleClaimReview : null}
+            onReprocess={canWrite ? () => setIsReprocessModalVisible(true) : null}
+            onDelete={canWrite ? () => setIsDeleteModalVisible(true) : null}
+            onAbort={canWrite ? () => setIsAbortModalVisible(true) : null}
+            onClaimReview={canReview ? handleClaimReview : null}
             onReleaseReview={isAdmin ? handleReleaseReview : null}
             currentUsername={currentUsername}
           />

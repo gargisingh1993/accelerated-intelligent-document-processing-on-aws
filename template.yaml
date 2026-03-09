@@ -5551,12 +5551,28 @@ Resources:
       Precedence: 0
       UserPoolId: !Ref UserPool
 
+  AuthorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      Description: Authors - read/write access to documents and configuration
+      GroupName: Author
+      Precedence: 1
+      UserPoolId: !Ref UserPool
+
   ReviewerGroup:
     Type: AWS::Cognito::UserPoolGroup
     Properties:
       Description: Document Reviewers for HITL
       GroupName: Reviewer
-      Precedence: 1
+      Precedence: 2
+      UserPoolId: !Ref UserPool
+
+  ViewerGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      Description: Viewers - read-only access to documents and configuration
+      GroupName: Viewer
+      Precedence: 3
       UserPoolId: !Ref UserPool
 
   AdminUserToGroupAttachment:
@@ -6761,7 +6777,9 @@ Resources:
         Variables:
           USER_POOL_ID: !Ref UserPool
           ADMIN_GROUP: !Ref AdminGroup
+          AUTHOR_GROUP: !Ref AuthorGroup
           REVIEWER_GROUP: !Ref ReviewerGroup
+          VIEWER_GROUP: !Ref ViewerGroup
           USERS_TABLE_NAME: !Ref UsersTable
           ALLOWED_SIGNUP_EMAIL_DOMAINS: !Ref AllowedSignUpEmailDomain
       LoggingConfig:

@@ -2,20 +2,57 @@
 
 ## Current Work Focus
 
-### Pattern-1 `use_bda` Auto-Enable Fix (February 27, 2026)
+### Role-Based Access Control (RBAC) Implementation (March 9, 2026)
 
-**Problem**: When upgrading a Pattern-1 stack that used an auto-created sample BDA project (empty `Pattern1BDAProjectArn`), the `update_configuration` Lambda's `if bda_project_arn:` check never fires, so all config versions default to `use_bda: false`.
+**Problem**: The existing system had only 2 roles (Admin, Reviewer) with security enforcement done entirely client-side — all documents were pulled to the browser and filtered in JavaScript, and the Reviewer could call any GraphQL mutation directly.
 
-**Fix implemented**:
-1. **`template.yaml`**: Added `ReadPreviousIDPPatternFunction` inline Lambda + `PreviousIDPPatternValue` custom resource that reads the current `IDPPattern` from SSM SettingsParameter _before_ `UpdateSettingsValues` overwrites it with "Unified". The value is passed to PATTERNSTACK as `PreviousIDPPattern`.
-2. **`patterns/unified/template.yaml`**: Added `PreviousIDPPattern` parameter, passed through to `UpdateDefaultConfig` custom resource.
-3. **`src/lambda/update_configuration/index.py`**: Added `PreviousIDPPattern` to excluded properties. After all configs are saved, if `PreviousIDPPattern` contains "Pattern" and "1" (case-insensitive), iterates ALL config versions setting `use_bda: true` and `bdaSyncStatus: "needs-sync"`.
+**Solution implemented (Phase 1 — Security Hardening + New Roles)**:
 
-### Sync Buttons UX Polish (February 27, 2026)
+#### 1. GraphQL Schema Auth Directives (Server-Side)
+Added `@aws_auth(cognito_groups: [...])` to ALL mutations and sensitive queries in `schema.graphql`:
+- Backend-only (IAM): createDocument, updateDocument, updateDocumentStatus, updateDocumentSection
+- Admin-only: deleteConfigVersion, createUser, deleteUser, listUsers
+- Admin+Author: deleteDocument, updateConfiguration, uploadDocument, reprocessDocument, test studio, discovery, pricing edits
+- Admin+Reviewer: claimReview, releaseReview, completeSectionReview, skipAllSectionsReview, processChanges
+- Admin+Author+Viewer: agent chat, code explorer, view configuration/pricing
+- All authenticated: listDocuments, getDocument, getFileContents (with resolver-level filtering)
 
-**Fix**: Added `disabled={hasUnsavedChanges}` and `title="Save your changes first"` tooltip to both "Sync from BDA" and "Sync to BDA" buttons in `ConfigurationLayout.tsx`. This prevents users from triggering a sync with unsaved form values.
+#### 2. Server-Side Document Filtering for Reviewer
+Modified `list_documents_gsi_resolver/index.py` to read caller's Cognito groups from `event.identity.claims` and apply DynamoDB `FilterExpression`:
+- Reviewer-only users: `HITLTriggered = true AND ((not completed AND (no owner OR owner = me)) OR owner = me)`
+- Admin/Author/Viewer: no filter (see all documents)
 
-**Note on `mergedConfig?.use_bda` timing**: The condition `(isPattern1 || mergedConfig?.use_bda || formValues?.use_bda)` still includes `formValues?.use_bda` so buttons show when toggled in form (before save). The `disabled={hasUnsavedChanges}` prevents actual sync until after save. The `mergedConfig` updates after save via `fetchConfiguration` in the save handler.
+#### 3. New Cognito Groups
+Added `AuthorGroup` (precedence 1) and `ViewerGroup` (precedence 3) to `template.yaml`.
+
+#### 4. User Management Lambda
+Updated to support 4 personas (Admin, Author, Reviewer, Viewer). Added `allowedConfigVersions` field to user records for future Phase 2 config-version scoping.
+
+#### 5. UI Updates
+- `useUserRole` hook: Added `isAuthor`, `isViewer`, `isReviewerOnly`, `isViewerOnly`, `canWrite`, `canReview`, `canManageUsers`, `canDeleteConfig`
+- Navigation: 4 distinct nav configurations (Admin=full, Author=no user mgmt, Viewer=read-only, Reviewer=doc list only)
+- DocumentList, DocumentDetails, SectionsPanel, PagesPanel: Use semantic role flags (`canWrite`, `canReview`)
+- TopNavigation: Shows role badge (blue=Admin, green=Author, grey=Reviewer/Viewer)
+
+### Key Files Modified (March 9)
+- `template.yaml` — New Cognito groups (Author, Viewer) + Lambda env vars
+- `nested/appsync/src/api/schema.graphql` — Auth directives on all operations
+- `nested/appsync/src/lambda/list_documents_gsi_resolver/index.py` — Server-side reviewer filtering
+- `src/lambda/user_management/index.py` — 4-role support + allowedConfigVersions
+- `src/ui/src/hooks/use-user-role.ts` — Extended role hook with convenience flags
+- `src/ui/src/components/genaiidp-layout/navigation.tsx` — 4 nav configurations
+- `src/ui/src/components/document-list/DocumentList.tsx` — canWrite/canReview
+- `src/ui/src/components/document-details/DocumentDetails.tsx` — canWrite
+- `src/ui/src/components/sections-panel/SectionsPanel.tsx` — canReview
+- `src/ui/src/components/pages-panel/PagesPanel.tsx` — isReviewerOnly
+- `src/ui/src/components/genai-idp-top-navigation/GenAIIDPTopNavigation.tsx` — 4-role badge
+- `docs/rbac.md` — RBAC documentation
+
+### Phase 2 (Future — Config-Version Scoping)
+- `allowedConfigVersions` attribute already added to User DDB records and GraphQL schema
+- Resolver-level filtering by config-version not yet implemented
+- Pipeline auth resolver pattern needed for scope enforcement
+- Agent Analytics with config-version scoping deferred to later phase
 
 ---
 
@@ -27,14 +64,8 @@
 - Routing via `use_bda` flag in configuration
 - Full config per version stored in DynamoDB
 
-### Pattern-1 → Unified Upgrade Flow
-1. `ReadPreviousIDPPatternFunction` reads SSM before overwrite → captures "Pattern1" or "Pattern-1-BDA"
-2. `UpdateSettingsValues` overwrites IDPPattern to "Unified"
-3. `PATTERNSTACK` receives `PreviousIDPPattern` → passes to `UpdateDefaultConfig`
-4. `update_configuration` Lambda: if PreviousIDPPattern contains "Pattern1", auto-enables BDA on all versions
-
-### Key Files Modified (Feb 27)
-- `template.yaml` — ReadPreviousIDPPattern resources, PATTERNSTACK PreviousIDPPattern param
-- `patterns/unified/template.yaml` — PreviousIDPPattern parameter + UpdateDefaultConfig property
-- `src/lambda/update_configuration/index.py` — PreviousIDPPattern handling, BDA auto-enable on all versions
-- `src/ui/src/components/configuration-layout/ConfigurationLayout.tsx` — Sync button disabled state
+### RBAC Architecture (March 9, 2026)
+- 3-layer enforcement: AppSync auth directives → Lambda resolver filtering → UI adaptation
+- 4 Cognito groups: Admin, Author, Reviewer, Viewer
+- Server-side document filtering for Reviewer role in listDocuments resolver
+- Config-version scoping data model ready (Phase 2)

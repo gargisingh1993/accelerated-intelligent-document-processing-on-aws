@@ -5,13 +5,12 @@
 Lambda resolver for listDocuments and getDocumentCount GraphQL queries.
 
 Uses the TypeDateIndex GSI on TrackingTable for efficient queries:
-- listDocuments: Paginated query with date range filtering
+- listDocuments: Paginated query with date range filtering and RBAC-based filtering
 - getDocumentCount: COUNT query for header display
 
-This replaces:
-1. The old VTL scan-based listDocuments resolver
-2. The shard-based N+1 pattern (listDocumentsDateShard → getDocument per item)
-3. The listDocumentsByDateRange Lambda (shard iteration + BatchGetItem)
+RBAC (Role-Based Access Control):
+- Admin/Author/Viewer: See all documents (scoped by allowedConfigVersions if set)
+- Reviewer: See only HITL-pending documents + their own completed reviews
 
 Performance: O(matched items) instead of O(total table items)
 """
@@ -22,7 +21,7 @@ import os
 from decimal import Decimal
 
 import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 
 logger = logging.getLogger()
 logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
@@ -36,6 +35,9 @@ MAX_PAGE_SIZE = 200
 # GSI name
 TYPE_DATE_INDEX = "TypeDateIndex"
 
+# HITL statuses that indicate a completed/skipped review
+COMPLETED_HITL_STATUSES = {"skipped", "reviewskipped", "completed", "reviewcompleted"}
+
 
 class DecimalEncoder(json.JSONEncoder):
     """JSON encoder that handles Decimal objects from DynamoDB."""
@@ -45,6 +47,32 @@ class DecimalEncoder(json.JSONEncoder):
                 return int(obj)
             return float(obj)
         return super().default(obj)
+
+
+def _get_caller_identity(event):
+    """Extract caller's Cognito groups and username from AppSync event identity."""
+    identity = event.get("identity", {})
+    claims = identity.get("claims", {})
+    groups = claims.get("cognito:groups", [])
+    username = claims.get("cognito:username", "") or claims.get("sub", "")
+
+    # Groups may be a string if user is in one group
+    if isinstance(groups, str):
+        groups = [groups]
+
+    return {
+        "groups": groups,
+        "username": username,
+        "is_admin": "Admin" in groups,
+        "is_author": "Author" in groups,
+        "is_reviewer": "Reviewer" in groups,
+        "is_viewer": "Viewer" in groups,
+    }
+
+
+def _is_reviewer_only(caller):
+    """Check if caller is a reviewer-only user (no Admin/Author/Viewer groups)."""
+    return caller["is_reviewer"] and not caller["is_admin"] and not caller["is_author"] and not caller["is_viewer"]
 
 
 def handler(event, context):
@@ -66,7 +94,7 @@ def handler(event, context):
 
 def list_documents(event):
     """
-    List documents using TypeDateIndex GSI with server-side pagination.
+    List documents using TypeDateIndex GSI with server-side pagination and RBAC filtering.
     
     Args (from GraphQL):
         startDateTime: ISO 8601 start time
@@ -89,6 +117,12 @@ def list_documents(event):
     
     table_name = os.environ["TRACKING_TABLE_NAME"]
     table = dynamodb.Table(table_name)
+    
+    # Get caller identity for RBAC
+    caller = _get_caller_identity(event)
+    reviewer_only = _is_reviewer_only(caller)
+    
+    logger.info(f"Caller groups: {caller['groups']}, reviewer_only: {reviewer_only}, username: {caller['username']}")
     
     # Build GSI query
     query_kwargs = {
@@ -115,6 +149,31 @@ def list_documents(event):
         )
     else:
         query_kwargs["KeyConditionExpression"] = Key("ItemType").eq("document")
+    
+    # RBAC: Server-side filtering for Reviewer-only users
+    # Reviewer sees: HITL-pending documents (not completed/skipped) that are either
+    # unassigned or assigned to them, PLUS completed documents owned by them
+    if reviewer_only:
+        reviewer_username = caller["username"]
+        # Build filter: HITLTriggered = true AND (
+        #   (HITLStatus NOT IN completed statuses AND (no owner OR owner = me))
+        #   OR HITLReviewOwner = me  (covers completed reviews they own)
+        # )
+        filter_expr = (
+            Attr("HITLTriggered").eq(True) & (
+                (
+                    ~Attr("HITLCompleted").eq(True) &
+                    (
+                        Attr("HITLReviewOwner").not_exists() |
+                        Attr("HITLReviewOwner").eq("") |
+                        Attr("HITLReviewOwner").eq(reviewer_username)
+                    )
+                ) |
+                Attr("HITLReviewOwner").eq(reviewer_username)
+            )
+        )
+        query_kwargs["FilterExpression"] = filter_expr
+        logger.info(f"Applied reviewer filter for user: {reviewer_username}")
     
     # Handle pagination token
     if next_token:

@@ -60,8 +60,10 @@ const UserManagementLayout = (): React.JSX.Element => {
   }, [settings]);
 
   const personaOptions = [
-    { label: 'Admin', value: 'Admin' },
-    { label: 'Reviewer', value: 'Reviewer' },
+    { label: 'Admin', value: 'Admin', description: 'Full access to all operations including user management' },
+    { label: 'Author', value: 'Author', description: 'Read + write access to documents, configuration, tests, discovery' },
+    { label: 'Reviewer', value: 'Reviewer', description: 'HITL review operations with filtered document visibility' },
+    { label: 'Viewer', value: 'Viewer', description: 'Read-only access to documents, configuration, and agent chat' },
   ];
 
   const validateEmail = useCallback(
@@ -250,11 +252,15 @@ const UserManagementLayout = (): React.JSX.Element => {
     {
       id: 'persona',
       header: 'Role',
-      cell: (item) => (
-        <Box {...({ color: item.persona === 'Admin' ? 'text-status-info' : 'text-body-default' } as Record<string, unknown>)}>
-          {item.persona}
-        </Box>
-      ),
+      cell: (item) => {
+        const colorMap: Record<string, string> = {
+          Admin: 'text-status-info',
+          Author: 'text-status-success',
+          Reviewer: 'text-body-default',
+          Viewer: 'text-body-secondary',
+        };
+        return <Box {...({ color: colorMap[item.persona] || 'text-body-default' } as Record<string, unknown>)}>{item.persona}</Box>;
+      },
       sortingField: 'persona',
     },
     {
@@ -368,7 +374,7 @@ const UserManagementLayout = (): React.JSX.Element => {
               >
                 <Input value={email} onChange={handleEmailChange} placeholder="user@example.com" type="email" />
               </FormField>
-              <FormField label="Role" description="Admin users can manage other users and configurations">
+              <FormField label="Role" description="Select the role that defines what this user can access and modify">
                 <Select
                   selectedOption={personaOptions.find((opt) => opt.value === persona)}
                   onChange={({ detail }) => setPersona(detail.selectedOption.value)}

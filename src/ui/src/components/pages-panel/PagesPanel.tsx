@@ -201,8 +201,7 @@ const PagesPanel = ({ pages, documentItem }: PagesPanelProps): React.JSX.Element
 
   const { currentCredentials } = useAppContext();
   const { settings } = useSettingsContext();
-  const { isReviewer, isAdmin } = useUserRole();
-  const isReviewerOnly = isReviewer && !isAdmin;
+  const { isReviewerOnly } = useUserRole();
 
   // Edit Mode should be disabled for reviewers until they click Start Review (claim the document)
   const hasReviewOwner = !!(documentItem?.hitlReviewOwner || documentItem?.hitlReviewOwnerEmail);
@@ -228,8 +227,6 @@ const PagesPanel = ({ pages, documentItem }: PagesPanelProps): React.JSX.Element
 
   // Log for debugging
   console.log('PagesPanel Edit Mode Check:', {
-    isReviewer,
-    isAdmin,
     isReviewerOnly,
     hitlTriggered,
     hasReviewOwner,
