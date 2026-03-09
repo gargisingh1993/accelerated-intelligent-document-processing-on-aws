@@ -15,7 +15,9 @@ import {
   FormField,
   Input,
   Select,
+  Multiselect,
   StatusIndicator,
+  Badge,
 } from '@cloudscape-design/components';
 import { generateClient } from 'aws-amplify/api';
 import { ConsoleLogger } from 'aws-amplify/utils';
@@ -23,6 +25,7 @@ import { ConsoleLogger } from 'aws-amplify/utils';
 import useUserRole from '../../hooks/use-user-role';
 import useAppContext from '../../contexts/app';
 import useSettingsContext from '../../contexts/settings';
+import useConfigurationVersions from '../../hooks/use-configuration-versions';
 import { listUsers, createUser as createUserMutation, deleteUser as deleteUserMutation } from '../../graphql/generated';
 import { getErrorMessage } from '../../utils/errorUtils';
 
@@ -34,18 +37,21 @@ interface User {
   persona: string;
   status?: string;
   createdAt?: string;
+  allowedConfigVersions?: (string | null)[] | null;
 }
 
 const UserManagementLayout = (): React.JSX.Element => {
   const { awsConfig } = useAppContext();
   const { settings } = useSettingsContext();
   const { isAdmin, loading: roleLoading } = useUserRole();
+  const { versions, fetchVersions } = useConfigurationVersions();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [email, setEmail] = useState('');
   const [persona, setPersona] = useState('Reviewer');
+  const [selectedConfigVersions, setSelectedConfigVersions] = useState<readonly { label: string; value: string }[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [emailError, setEmailError] = useState('');
@@ -66,6 +72,13 @@ const UserManagementLayout = (): React.JSX.Element => {
     { label: 'Reviewer', value: 'Reviewer', description: 'HITL review operations with filtered document visibility' },
     { label: 'Viewer', value: 'Viewer', description: 'Read-only access to documents, configuration, and agent chat' },
   ];
+
+  const configVersionOptions = useMemo(() => {
+    return versions.map((v) => ({
+      label: v.versionName + (v.isActive ? ' (active)' : ''),
+      value: v.versionName,
+    }));
+  }, [versions]);
 
   const validateEmail = useCallback(
     (emailValue: string): string => {
@@ -148,10 +161,11 @@ const UserManagementLayout = (): React.JSX.Element => {
 
     try {
       const client = generateClient();
-      logger.debug('Creating user:', { email, persona });
+      const allowedConfigVersions = selectedConfigVersions.length > 0 ? selectedConfigVersions.map((opt) => opt.value) : undefined;
+      logger.debug('Creating user:', { email, persona, allowedConfigVersions });
       await client.graphql({
         query: createUserMutation,
-        variables: { email, persona },
+        variables: { email, persona, allowedConfigVersions },
       });
 
       logger.debug('User created successfully');
@@ -159,6 +173,7 @@ const UserManagementLayout = (): React.JSX.Element => {
       setShowCreateModal(false);
       setEmail('');
       setPersona('Reviewer');
+      setSelectedConfigVersions([]);
       await loadUsers();
     } catch (err) {
       logger.error('Failed to create user:', err);
@@ -205,8 +220,15 @@ const UserManagementLayout = (): React.JSX.Element => {
     setShowCreateModal(false);
     setEmail('');
     setPersona('Reviewer');
+    setSelectedConfigVersions([]);
     setError('');
     setEmailError('');
+  };
+
+  const handleCreateModalOpen = () => {
+    setShowCreateModal(true);
+    // Fetch config versions when modal opens
+    fetchVersions();
   };
 
   const handleRefresh = () => {
@@ -239,6 +261,26 @@ const UserManagementLayout = (): React.JSX.Element => {
     );
   }
 
+  const formatConfigVersions = (versions: (string | null)[] | null | undefined): React.ReactNode => {
+    if (!versions || versions.length === 0) {
+      return (
+        <Box color="text-body-secondary">
+          <em>All versions</em>
+        </Box>
+      );
+    }
+    const validVersions = versions.filter((v): v is string => v !== null);
+    return (
+      <SpaceBetween direction="horizontal" size="xxs">
+        {validVersions.map((v) => (
+          <Badge key={v} color="blue">
+            {v}
+          </Badge>
+        ))}
+      </SpaceBetween>
+    );
+  };
+
   const columnDefinitions = [
     {
       id: 'email',
@@ -259,6 +301,11 @@ const UserManagementLayout = (): React.JSX.Element => {
         return <Box {...({ color: colorMap[item.persona] || 'text-body-default' } as Record<string, unknown>)}>{item.persona}</Box>;
       },
       sortingField: 'persona',
+    },
+    {
+      id: 'allowedConfigVersions',
+      header: 'Config Version Scope',
+      cell: (item: User) => formatConfigVersions(item.allowedConfigVersions),
     },
     {
       id: 'status',
@@ -295,7 +342,7 @@ const UserManagementLayout = (): React.JSX.Element => {
               <Button iconName="refresh" onClick={handleRefresh} loading={refreshing} disabled={loading}>
                 Refresh
               </Button>
-              <Button variant="primary" onClick={() => setShowCreateModal(true)} disabled={loading || refreshing}>
+              <Button variant="primary" onClick={handleCreateModalOpen} disabled={loading || refreshing}>
                 Create User
               </Button>
             </SpaceBetween>
@@ -332,7 +379,7 @@ const UserManagementLayout = (): React.JSX.Element => {
               <Box variant="p" padding={{ bottom: 's' }} textAlign="center" color="inherit">
                 Create your first user to get started.
               </Box>
-              <Button onClick={() => setShowCreateModal(true)}>Create User</Button>
+              <Button onClick={handleCreateModalOpen}>Create User</Button>
             </Box>
           }
           header={
@@ -378,6 +425,29 @@ const UserManagementLayout = (): React.JSX.Element => {
                   selectedOption={personaOptions.find((opt) => opt.value === persona) ?? null}
                   onChange={({ detail }) => setPersona(detail.selectedOption.value ?? '')}
                   options={personaOptions}
+                />
+              </FormField>
+              <FormField
+                label={
+                  <span>
+                    Configuration Version Scope <em>- optional</em>
+                  </span>
+                }
+                description="Restrict this user to specific configuration versions. Leave empty for unrestricted access to all versions."
+                info={
+                  <Box color="text-body-secondary" fontSize="body-s">
+                    Note: Scope enforcement at the API level is planned for a future release. Scopes assigned now will be enforced when that
+                    feature is available.
+                  </Box>
+                }
+              >
+                <Multiselect
+                  selectedOptions={selectedConfigVersions}
+                  onChange={({ detail }) => setSelectedConfigVersions(detail.selectedOptions as { label: string; value: string }[])}
+                  options={configVersionOptions}
+                  placeholder="All versions (unrestricted)"
+                  filteringType="auto"
+                  tokenLimit={3}
                 />
               </FormField>
             </SpaceBetween>

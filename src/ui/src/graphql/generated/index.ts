@@ -142,13 +142,14 @@ export const copyToBaseline = /* GraphQL */ `
 ` as GeneratedMutation<CopyToBaselineMutationVariables, CopyToBaselineMutation>;
 
 export const createUser = /* GraphQL */ `
-  mutation CreateUser($email: String!, $persona: String!) {
-    createUser(email: $email, persona: $persona) {
+  mutation CreateUser($email: String!, $persona: String!, $allowedConfigVersions: [String]) {
+    createUser(email: $email, persona: $persona, allowedConfigVersions: $allowedConfigVersions) {
       userId
       email
       persona
       status
       createdAt
+      allowedConfigVersions
     }
   }
 ` as GeneratedMutation<CreateUserMutationVariables, CreateUserMutation>;
@@ -678,6 +679,7 @@ export const listUsers = /* GraphQL */ `
         persona
         status
         createdAt
+        allowedConfigVersions
       }
     }
   }

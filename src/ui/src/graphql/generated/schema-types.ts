@@ -1043,6 +1043,7 @@ export type UpdatePricingResponse = {
 };
 
 export type User = {
+  allowedConfigVersions?: Maybe<Array<Maybe<Scalars['String']['output']>>>;
   createdAt?: Maybe<Scalars['AWSDateTime']['output']>;
   email: Scalars['String']['output'];
   persona: Scalars['String']['output'];

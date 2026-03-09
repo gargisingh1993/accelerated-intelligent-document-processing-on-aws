@@ -424,6 +424,7 @@ export type MutationCreateDocumentArgs = {
 
 
 export type MutationCreateUserArgs = {
+  allowedConfigVersions?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>>>;
   email: Scalars['String']['input'];
   persona: Scalars['String']['input'];
 };
@@ -1043,6 +1044,7 @@ export type UpdatePricingResponse = {
 };
 
 export type User = {
+  allowedConfigVersions?: Maybe<Array<Maybe<Scalars['String']['output']>>>;
   createdAt?: Maybe<Scalars['AWSDateTime']['output']>;
   email: Scalars['String']['output'];
   persona: Scalars['String']['output'];
@@ -1111,10 +1113,11 @@ export type CopyToBaselineMutation = { copyToBaseline: { success: boolean, messa
 export type CreateUserMutationVariables = Exact<{
   email: Scalars['String']['input'];
   persona: Scalars['String']['input'];
+  allowedConfigVersions?: InputMaybe<Array<InputMaybe<Scalars['String']['input']>> | InputMaybe<Scalars['String']['input']>>;
 }>;
 
 
-export type CreateUserMutation = { createUser?: { userId: string, email: string, persona: string, status?: string | null, createdAt?: string | null } | null };
+export type CreateUserMutation = { createUser?: { userId: string, email: string, persona: string, status?: string | null, createdAt?: string | null, allowedConfigVersions?: Array<string | null> | null } | null };
 
 export type DeleteAgentJobMutationVariables = Exact<{
   jobId: Scalars['ID']['input'];
@@ -1485,7 +1488,7 @@ export type ListDocumentsDateShardQuery = { listDocumentsDateShard?: { nextToken
 export type ListUsersQueryVariables = Exact<{ [key: string]: never; }>;
 
 
-export type ListUsersQuery = { listUsers?: { users?: Array<{ userId: string, email: string, persona: string, status?: string | null, createdAt?: string | null } | null> | null } | null };
+export type ListUsersQuery = { listUsers?: { users?: Array<{ userId: string, email: string, persona: string, status?: string | null, createdAt?: string | null, allowedConfigVersions?: Array<string | null> | null } | null> | null } | null };
 
 export type QueryKnowledgeBaseQueryVariables = Exact<{
   input: Scalars['String']['input'];
