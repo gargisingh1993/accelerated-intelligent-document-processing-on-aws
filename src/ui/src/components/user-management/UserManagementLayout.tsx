@@ -249,7 +249,6 @@ const UserManagementLayout = (): React.JSX.Element => {
     {
       id: 'persona',
       header: 'Role',
-      cell: (item: User) => (
       cell: (item: User) => {
         const colorMap: Record<string, string> = {
           Admin: 'text-status-info',
