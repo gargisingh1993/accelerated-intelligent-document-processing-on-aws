@@ -1,3 +1,7 @@
+---
+title: "IDP CLI - Command Line Interface for Batch Document Processing"
+---
+
 # IDP CLI - Command Line Interface for Batch Document Processing
 
 A command-line tool for batch document processing with the GenAI IDP Accelerator.

@@ -881,6 +881,7 @@ export const startTestRun = /* GraphQL */ `
       status
       filesCount
       createdAt
+      configVersion
     }
   }
 ` as GeneratedMutation<StartTestRunMutationVariables, StartTestRunMutation>;

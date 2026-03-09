@@ -1,0 +1,15 @@
+/* GenAIIDP Documentation - Custom Styles */
+/* Only customize the accent color — let Starlight handle everything else */
+
+:root {
+  --sl-hue-accent: 36;
+  --sl-saturation-accent: 100%;
+}
+
+/* Make images responsive and add a subtle border */
+.sl-markdown-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--sl-color-gray-4);
+}

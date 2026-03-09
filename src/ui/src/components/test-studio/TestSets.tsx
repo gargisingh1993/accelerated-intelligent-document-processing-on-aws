@@ -27,6 +27,7 @@ import {
   listBucketFiles,
   validateTestFileName,
 } from '../../graphql/generated';
+import { getErrorMessage } from '../../utils/errorUtils';
 
 const client = generateClient();
 
@@ -84,17 +85,18 @@ const TestSets = (): React.JSX.Element => {
 
       // Upsert: merge backend data with existing UI state, deduplicating by id
       setTestSets((prevTestSets) => {
-        const backendIds = new Set(backendTestSets.map((ts) => ts.id));
+        const nonNullBackendTestSets = backendTestSets.filter((ts): ts is NonNullable<typeof ts> => ts !== null);
+        const backendIds = new Set(nonNullBackendTestSets.map((ts) => ts.id));
 
         // Keep UI test sets that don't exist in backend (active processing)
         const uiOnlyTestSets = prevTestSets.filter((ts) => !backendIds.has(ts.id) && ts.status !== 'COMPLETED' && ts.status !== 'FAILED');
 
         // Combine backend test sets (always win) with UI-only active test sets
-        return [...backendTestSets, ...uiOnlyTestSets];
+        return [...nonNullBackendTestSets, ...uiOnlyTestSets];
       });
     } catch (err) {
       console.error('TestSets: Failed to load test sets:', err);
-      setError(`Failed to load test sets: ${err.message || 'Unknown error'}`);
+      setError(`Failed to load test sets: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -157,17 +159,17 @@ const TestSets = (): React.JSX.Element => {
       const result = await client.graphql({
         query: listBucketFiles,
         variables: {
-          bucketType: selectedBucket.value,
+          bucketType: selectedBucket.value ?? '',
           filePattern: filePattern.trim(),
         },
       });
 
-      const files = result.data.listBucketFiles || [];
+      const files = (result.data.listBucketFiles || []).filter((f): f is string => f !== null);
       setMatchingFiles(files);
       setFileCount(files.length);
       setShowFilesModal(true);
     } catch (err) {
-      const errorMessage = err.message || err.errors?.[0]?.message || JSON.stringify(err) || 'Unknown error';
+      const errorMessage = getErrorMessage(err);
       setError(`Failed to check files: ${errorMessage}`);
     } finally {
       setLoading(false);
@@ -224,7 +226,7 @@ const TestSets = (): React.JSX.Element => {
       }
     } catch (err) {
       console.error('Error validating test set name:', err);
-      const errorMessage = err?.message || err?.errors?.[0]?.message || JSON.stringify(err) || 'Unknown error';
+      const errorMessage = getErrorMessage(err);
       setError(`Failed to validate test set name: ${errorMessage}`);
       return;
     }
@@ -237,7 +239,7 @@ const TestSets = (): React.JSX.Element => {
           name: newTestSetName.trim(),
           description: newTestSetDescription.trim(),
           filePattern: filePattern.trim(),
-          bucketType: selectedBucket.value,
+          bucketType: selectedBucket.value ?? '',
           fileCount,
         },
       });
@@ -274,7 +276,7 @@ const TestSets = (): React.JSX.Element => {
       }
     } catch (err) {
       console.error('Error adding test set:', err);
-      const errorMessage = err?.message || err?.errors?.[0]?.message || JSON.stringify(err) || 'Unknown error';
+      const errorMessage = getErrorMessage(err);
       setError(`Failed to add test set: ${errorMessage}`);
     } finally {
       setLoading(false);
@@ -320,7 +322,7 @@ const TestSets = (): React.JSX.Element => {
       }
     } catch (err) {
       console.error('Error validating test set name:', err);
-      const errorMessage = err?.message || err?.errors?.[0]?.message || JSON.stringify(err) || 'Unknown error';
+      const errorMessage = getErrorMessage(err);
       setError(`Failed to validate test set name: ${errorMessage}`);
       return;
     }
@@ -366,7 +368,7 @@ const TestSets = (): React.JSX.Element => {
         throw new Error(`Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`);
       }
 
-      const newTestSet = {
+      const newTestSet: TestSetItem = {
         id: response.testSetId,
         name: newTestSetName.trim(),
         description: newTestSetDescription.trim(),
@@ -401,7 +403,7 @@ const TestSets = (): React.JSX.Element => {
       }
     } catch (err) {
       console.error('Error creating test set:', err);
-      const errorMessage = err?.message || err?.errors?.[0]?.message || JSON.stringify(err) || 'Unknown error';
+      const errorMessage = getErrorMessage(err);
       setError(`Failed to create test set: ${errorMessage}`);
     } finally {
       setLoading(false);
@@ -415,10 +417,10 @@ const TestSets = (): React.JSX.Element => {
     setSuccessMessage('');
     try {
       const result = await client.graphql({ query: getTestSets });
-      setTestSets(result.data.getTestSets || []);
+      setTestSets((result.data.getTestSets || []).filter((ts): ts is NonNullable<typeof ts> => ts !== null));
     } catch (err) {
       console.error('Error refreshing test sets:', err);
-      const errorMessage = err?.message || err?.errors?.[0]?.message || JSON.stringify(err) || 'Unknown error';
+      const errorMessage = getErrorMessage(err);
       setError(`Failed to refresh test sets: ${errorMessage}`);
     } finally {
       setRefreshing(false);
@@ -441,7 +443,7 @@ const TestSets = (): React.JSX.Element => {
       setError('');
     } catch (err) {
       console.error('Error deleting test sets:', err);
-      const errorMessage = err?.message || err?.errors?.[0]?.message || JSON.stringify(err) || 'Unknown error';
+      const errorMessage = getErrorMessage(err);
       setError(`Failed to delete test sets: ${errorMessage}`);
     } finally {
       setLoading(false);
@@ -457,36 +459,36 @@ const TestSets = (): React.JSX.Element => {
     {
       id: 'name',
       header: 'Test Set Name',
-      cell: (item) => item.name,
+      cell: (item: TestSetItem) => item.name,
       sortingField: 'name',
     },
     {
       id: 'id',
       header: 'Test Set ID',
-      cell: (item) => item.id,
+      cell: (item: TestSetItem) => item.id,
       sortingField: 'id',
     },
     {
       id: 'description',
       header: 'Description',
-      cell: (item) => item.description || '-',
+      cell: (item: TestSetItem) => item.description || '-',
       width: 200,
       minWidth: 120,
     },
     {
       id: 'filePattern',
       header: 'File Pattern',
-      cell: (item) => item.filePattern,
+      cell: (item: TestSetItem) => item.filePattern,
     },
     {
       id: 'fileCount',
       header: 'Files',
-      cell: (item) => item.fileCount,
+      cell: (item: TestSetItem) => item.fileCount,
     },
     {
       id: 'status',
       header: 'Status',
-      cell: (item) => {
+      cell: (item: TestSetItem) => {
         const status = item.status || '-';
 
         if (status === 'FAILED' && item.error) {
@@ -520,7 +522,7 @@ const TestSets = (): React.JSX.Element => {
     {
       id: 'createdAt',
       header: 'Created',
-      cell: (item) => new Date(item.createdAt).toLocaleDateString(),
+      cell: (item: TestSetItem) => new Date(item.createdAt).toLocaleDateString(),
       sortingField: 'createdAt',
     },
   ];
@@ -643,7 +645,7 @@ const TestSets = (): React.JSX.Element => {
                 setWarningMessage('');
               }}
               placeholder="e.g., lending-package-v1"
-              invalid={newTestSetName && !validateTestSetName(newTestSetName)}
+              invalid={!!newTestSetName && !validateTestSetName(newTestSetName)}
             />
           </FormField>
 
@@ -658,7 +660,7 @@ const TestSets = (): React.JSX.Element => {
               value={newTestSetDescription}
               onChange={({ detail }) => setNewTestSetDescription(detail.value)}
               placeholder="Test set description"
-              invalid={newTestSetDescription && !validateDescription(newTestSetDescription)}
+              invalid={!!newTestSetDescription && !validateDescription(newTestSetDescription)}
             />
           </FormField>
 
@@ -825,7 +827,7 @@ const TestSets = (): React.JSX.Element => {
               value={newTestSetDescription}
               onChange={({ detail }) => setNewTestSetDescription(detail.value)}
               placeholder="Test set description"
-              invalid={newTestSetDescription && !validateDescription(newTestSetDescription)}
+              invalid={!!newTestSetDescription && !validateDescription(newTestSetDescription)}
             />
           </FormField>
 
@@ -876,7 +878,7 @@ const TestSets = (): React.JSX.Element => {
               type="file"
               accept=".zip"
               onChange={async (e) => {
-                const file = e.target.files[0];
+                const file = e.target.files?.[0];
                 if (file) {
                   setZipFile(file);
 
@@ -912,7 +914,7 @@ const TestSets = (): React.JSX.Element => {
                     }
                   } catch (err) {
                     console.error('Error validating test set name:', err);
-                    const errorMessage = err?.message || err?.errors?.[0]?.message || JSON.stringify(err) || 'Unknown error';
+                    const errorMessage = getErrorMessage(err);
                     setError(`Failed to validate test set name: ${errorMessage}`);
                     setNewTestSetName('');
                     return;

@@ -1224,7 +1224,7 @@ export type StartTestRunMutationVariables = Exact<{
 }>;
 
 
-export type StartTestRunMutation = { startTestRun?: { testRunId: string, testSetName?: string | null, status: string, filesCount: number, createdAt?: string | null } | null };
+export type StartTestRunMutation = { startTestRun?: { testRunId: string, testSetName?: string | null, status: string, filesCount: number, createdAt?: string | null, configVersion?: string | null } | null };
 
 export type SyncBdaIdpMutationVariables = Exact<{
   direction?: InputMaybe<Scalars['String']['input']>;

@@ -79,7 +79,7 @@ const useGraphQlApi = ({ initialPeriodsToLoad = DOCUMENT_LIST_SHARDS_PER_DAY * 2
   const [isDocumentsListLoading, setIsDocumentsListLoading] = useState<boolean>(false);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [customDateRange, setCustomDateRange] = useState<DateRange | null>(null);
-  const { setErrorMessage } = useAppContext()!;
+  const { setErrorMessage } = useAppContext();
 
   const subscriptionsRef = useRef<{
     onCreate: GraphQLSubscriptionRef | null;
@@ -356,9 +356,9 @@ const useGraphQlApi = ({ initialPeriodsToLoad = DOCUMENT_LIST_SHARDS_PER_DAY * 2
       const response = result.data.abortWorkflow;
       setIsDocumentsListLoading(true);
 
-      if (response.failedCount > 0 && response.abortedCount > 0) {
-        setErrorMessage(`Aborted ${response.abortedCount} document(s), but ${response.failedCount} failed`);
-      } else if (response.failedCount > 0 && response.abortedCount === 0) {
+      if ((response.failedCount ?? 0) > 0 && (response.abortedCount ?? 0) > 0) {
+        setErrorMessage(`Aborted ${response.abortedCount ?? 0} document(s), but ${response.failedCount ?? 0} failed`);
+      } else if ((response.failedCount ?? 0) > 0 && response.abortedCount === 0) {
         setErrorMessage(`Failed to abort document(s): ${response.errors?.join(', ') || 'Unknown error'}`);
       }
 

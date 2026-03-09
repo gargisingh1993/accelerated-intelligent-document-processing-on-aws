@@ -37,8 +37,21 @@ import {
   parseWeightedOverallScores,
   parseTestRunConfig,
 } from '../../graphql/awsjson-parsers';
+import type { SelectProps } from '@cloudscape-design/components';
 
 const client = generateClient();
+
+interface CostItem {
+  context: string;
+  serviceApi: string;
+  unit: string;
+  value: string;
+  unitCost: string;
+  estimatedCost: string;
+  isTotal?: boolean;
+  isSubtotal?: boolean;
+  sortOrder: number;
+}
 
 interface ComprehensiveBreakdownProps {
   costBreakdown: Record<string, Record<string, Record<string, unknown>>> | null;
@@ -191,9 +204,9 @@ const ComprehensiveBreakdown = ({
             resizableColumns
             wrapLines={preferences.wrapLines}
             items={(() => {
-              const costItems = [];
+              const costItems: CostItem[] = [];
               let totalCost = 0;
-              const contextTotals = {};
+              const contextTotals: Record<string, number> = {};
 
               // First pass: collect all items and calculate context totals
               Object.entries(costBreakdown).forEach(([context, services]) => {
@@ -233,8 +246,8 @@ const ComprehensiveBreakdown = ({
               });
 
               // Second pass: insert subtotal rows after each context group
-              const finalItems = [];
-              const _currentContext = null;
+              const finalItems: CostItem[] = [];
+              const _currentContext: string | null = null;
 
               costItems.forEach((item, index) => {
                 // Add the regular item
@@ -373,14 +386,7 @@ interface SelectedRange {
 }
 
 const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): React.JSX.Element => {
-  const { addTestRun: addTestRunRaw } = useAppContext();
-  const addTestRun = addTestRunRaw as (
-    testRunId: string,
-    testSetName: string,
-    context: string,
-    filesCount: number,
-    configVersion?: string,
-  ) => void;
+  const { addTestRun } = useAppContext();
   const { versions } = useConfigurationVersions();
   const [results, setResults] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -393,14 +399,12 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
   const [testSetFileCount, setTestSetFileCount] = useState<number | null>(null);
   const [testSetStatus, setTestSetStatus] = useState<string | null>(null);
   const [testSetFilePattern, setTestSetFilePattern] = useState<string | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [chartType, setChartType] = useState<any>({ label: 'Bar Chart', value: 'bar' });
+  const [chartType, setChartType] = useState<SelectProps.Option>({ label: 'Bar Chart', value: 'bar' });
   const [retryMessage, setRetryMessage] = useState('');
   const [preferences, setPreferences] = useState({ wrapLines: false });
   const [showDocumentsModal, setShowDocumentsModal] = useState(false);
   const [selectedRangeData, setSelectedRangeData] = useState<SelectedRange | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [lowestScoreCount, setLowestScoreCount] = useState<any>({ label: '5', value: 5 });
+  const [lowestScoreCount, setLowestScoreCount] = useState<SelectProps.Option>({ label: '5', value: '5' });
 
   // Config export modal state
   const [showConfigExportModal, setShowConfigExportModal] = useState(false);
@@ -424,12 +428,12 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
       });
 
       const testSets = testSetsResult.data.getTestSets || [];
-      const testSet = testSets.find((ts) => ts.id === results.testSetId);
+      const testSet = testSets.find((ts) => ts?.id === results.testSetId);
 
       if (testSet) {
-        setTestSetStatus(testSet.status);
-        setTestSetFileCount(testSet.fileCount);
-        setTestSetFilePattern(testSet.filePattern);
+        setTestSetStatus(testSet.status ?? null);
+        setTestSetFileCount(testSet.fileCount ?? null);
+        setTestSetFilePattern(testSet.filePattern ?? null);
       } else {
         setTestSetStatus('NOT_FOUND');
         setTestSetFileCount(0);
@@ -444,7 +448,7 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
 
   useEffect(() => {
     let isCancelled = false;
-    const timeouts = []; // Track all timeouts to clear them
+    const timeouts: ReturnType<typeof setTimeout>[] = []; // Track all timeouts to clear them
 
     const fetchResults = async () => {
       if (isCancelled) return;
@@ -512,24 +516,31 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
             break;
           } catch (retryError) {
             if (isCancelled) return;
+            const typedRetryError = retryError as {
+              message?: string;
+              code?: string;
+              name?: string;
+              errors?: Array<{ errorType?: string; message?: string }>;
+            };
 
             console.log('getTestRun error caught:', {
-              message: retryError.message,
-              code: retryError.code,
-              name: retryError.name,
+              message: typedRetryError.message,
+              code: typedRetryError.code,
+              name: typedRetryError.name,
               error: retryError,
             });
             const isTimeout =
-              retryError.message?.toLowerCase().includes('timeout') ||
-              retryError.code === 'TIMEOUT' ||
-              retryError.message?.includes('Request failed with status code 504') ||
-              retryError.name === 'TimeoutError' ||
-              retryError.code === 'NetworkError' ||
-              retryError.errors?.some(
-                (err) => err.errorType === 'Lambda:ExecutionTimeoutException' || err.message?.toLowerCase().includes('timeout'),
+              typedRetryError.message?.toLowerCase().includes('timeout') ||
+              typedRetryError.code === 'TIMEOUT' ||
+              typedRetryError.message?.includes('Request failed with status code 504') ||
+              typedRetryError.name === 'TimeoutError' ||
+              typedRetryError.code === 'NetworkError' ||
+              typedRetryError.errors?.some(
+                (err: { errorType?: string; message?: string }) =>
+                  err.errorType === 'Lambda:ExecutionTimeoutException' || err.message?.toLowerCase().includes('timeout'),
               );
             if (isTimeout && attempt < maxRetries) {
-              console.log(`getTestRun attempt ${attempt} failed, retrying...`, retryError.message);
+              console.log(`getTestRun attempt ${attempt} failed, retrying...`, typedRetryError.message);
 
               clearAllTimeouts(); // Clear any running timeouts
 
@@ -551,14 +562,14 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
           }
         }
 
-        if (!isCancelled) {
+        if (!isCancelled && result) {
           const testRun = result.data.getTestRun;
           console.log('Test results:', testRun);
-          setResults(testRun);
+          setResults(testRun as Record<string, unknown> | null);
         }
       } catch (err) {
         if (!isCancelled) {
-          setError(err.message);
+          setError((err as Error).message);
         }
       } finally {
         if (!isCancelled) {
@@ -744,7 +755,7 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
         console.error('Invalid numberOfFiles value');
         return;
       }
-      if (numFiles > testSetFileCount) {
+      if (testSetFileCount !== null && numFiles > testSetFileCount) {
         console.error(`numberOfFiles (${numFiles}) exceeds test set file count (${testSetFileCount})`);
         return;
       }
@@ -772,7 +783,13 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
         console.log('Success! Closing modal and redirecting...');
         const newTestRun = result.data.startTestRun;
         // Add to active test runs
-        addTestRun(newTestRun.testRunId as string, newTestRun.testSetName as string, reRunContext, newTestRun.filesCount as number);
+        addTestRun(
+          newTestRun.testRunId as string,
+          newTestRun.testSetName as string,
+          reRunContext,
+          newTestRun.filesCount as number,
+          newTestRun.configVersion || '',
+        );
         setShowReRunModal(false);
         setReRunContext('');
         setReRunNumberOfFiles('');
@@ -783,8 +800,9 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
       }
     } catch (err) {
       console.error('GraphQL call failed:', err);
-      if (err.errors) {
-        err.errors.forEach((errorItem, index) => {
+      const typedErr = err as { errors?: Array<{ message: string }> };
+      if (typedErr.errors) {
+        typedErr.errors.forEach((errorItem: { message: string }, index: number) => {
           console.error(`Error ${index}:`, errorItem.message);
         });
       }
@@ -901,7 +919,7 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
                 : 'N/A'}
             </Box>
           </Box>
-          {results.configVersion && (
+          {Boolean(results.configVersion) && (
             <Box>
               <Box variant="awsui-key-label">Config Version</Box>
               <Box fontSize="heading-l">{formatConfigVersionLink(results.configVersion as string, versions)}</Box>
@@ -939,7 +957,7 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
                     : results.weightedOverallScores;
 
                 // Create score range buckets
-                const buckets = {
+                const buckets: Record<string, { count: number; docs: RangeDoc[] }> = {
                   '0.0-0.1': { count: 0, docs: [] },
                   '0.1-0.2': { count: 0, docs: [] },
                   '0.2-0.3': { count: 0, docs: [] },
@@ -1068,10 +1086,11 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
                         activeDot={{
                           r: 6,
                           cursor: 'pointer',
-                          onClick: (data) => {
-                            const range = data.payload.range;
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          onClick: (data: any) => {
+                            const range = data.payload.range as string;
                             if (range && buckets[range] && buckets[range].docs.length > 0) {
-                              const docs = buckets[range].docs.sort((a, b) => b.score - a.score);
+                              const docs = buckets[range].docs.sort((a: RangeDoc, b: RangeDoc) => b.score - a.score);
                               setSelectedRangeData({ range, docs });
                               setTimeout(() => {
                                 setShowDocumentsModal(true);
@@ -1254,7 +1273,7 @@ const TestResults = ({ testRunId, setSelectedTestRunId }: TestResultsProps): Rea
         size="medium"
       >
         <Box>
-          {selectedRangeData?.docs?.length > 0 ? (
+          {selectedRangeData && selectedRangeData.docs?.length > 0 ? (
             <Table
               resizableColumns
               wrapLines={preferences.wrapLines}

@@ -5,6 +5,8 @@ SPDX-License-Identifier: MIT-0
 
 **Questions?** [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/aws-solutions-library-samples/accelerated-intelligent-document-processing-on-aws)
 
+📖 **[Browse the Documentation Site](https://aws-solutions-library-samples.github.io/accelerated-intelligent-document-processing-on-aws/)** — searchable, with sidebar navigation
+
 ## Table of Contents
 
 - [Gen AI Intelligent Document Processing (GenAIIDP)](#gen-ai-intelligent-document-processing-genaiidp)
@@ -164,6 +166,8 @@ For detailed deployment and testing instructions, see the [Deployment Guide](./d
 
 
 ## Detailed Documentation
+
+> 📖 **[Browse all documentation on the GenAIIDP Docs Site](https://aws-solutions-library-samples.github.io/accelerated-intelligent-document-processing-on-aws/)** — full-text search, sidebar navigation, and organized by topic.
 
 ### Core Documentation
 

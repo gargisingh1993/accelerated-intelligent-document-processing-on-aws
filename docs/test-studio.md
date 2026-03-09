@@ -1,3 +1,7 @@
+---
+title: "Test Studio"
+---
+
 # Test Studio
 
 The Test Studio provides a comprehensive interface for managing test sets, running tests, and analyzing results directly from the web UI.

@@ -174,8 +174,7 @@ const Navigation = ({
   const location = useLocation();
   const path = location.pathname;
   let activeHref = `#${DEFAULT_PATH}`;
-  const { settings: rawSettings } = useSettingsContext() || {};
-  const settings = rawSettings as Record<string, unknown> | undefined;
+  const { settings } = useSettingsContext();
   const { isAdmin, isAuthor, isReviewerOnly, isViewerOnly } = useUserRole();
 
   // Select navigation items based on user role (highest privilege wins)
@@ -217,14 +216,15 @@ const Navigation = ({
     return baseItems
       .map((item) => {
         if (item.type === 'section' && item.text === 'Configuration') {
+          const section = item as SideNavigationProps.Section;
           return {
             ...item,
-            items: item.items.filter((subItem) => subItem.text !== 'Capacity Planning'),
+            items: section.items.filter((subItem) => (subItem as { text?: string }).text !== 'Capacity Planning'),
           };
         }
         return item;
       })
-      .filter((item) => item.text !== 'Capacity Planning'); // Also filter top-level if it exists
+      .filter((item) => (item as { text?: string }).text !== 'Capacity Planning'); // Also filter top-level if it exists
   }, [baseItems, settings?.IDPPattern]);
 
   // Determine active link based on current path

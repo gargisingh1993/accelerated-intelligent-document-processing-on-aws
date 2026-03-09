@@ -50,8 +50,7 @@ interface DiscoveryJob {
 }
 
 const DiscoveryPanel = (): React.JSX.Element => {
-  const { settings: rawSettings } = useSettingsContext() || {};
-  const settings = rawSettings as Record<string, unknown> | undefined;
+  const { settings } = useSettingsContext();
   const { versions, loading: versionsLoading, getVersionOptions } = useConfigurationVersions();
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [groundTruthFile, setGroundTruthFile] = useState<File | null>(null);
@@ -195,7 +194,7 @@ const DiscoveryPanel = (): React.JSX.Element => {
           variables: { jobId: job.jobId },
         }) as unknown as GqlSubscription;
         const subscription = observable.subscribe({
-            next: (data) => {
+            next: (data: { data?: { onDiscoveryJobStatusChange?: DiscoveryJob } }) => {
               console.log('Discovery job status changed:', data);
               const updatedJob = data?.data?.onDiscoveryJobStatusChange;
               if (updatedJob) {
@@ -206,7 +205,7 @@ const DiscoveryPanel = (): React.JSX.Element => {
               console.warn('Received subscription update but no job data, falling back to refresh');
               loadDiscoveryJobs();
             },
-            error: (subscriptionError) => {
+            error: (subscriptionError: unknown) => {
               console.error('Discovery job subscription error:', subscriptionError);
             },
           });
@@ -284,7 +283,7 @@ const DiscoveryPanel = (): React.JSX.Element => {
         setError(null);
         setIsValidatingJson(false);
       } catch (jsonError) {
-        const friendlyError = getJsonValidationError(jsonError);
+        const friendlyError = getJsonValidationError(jsonError as { message?: string; toString: () => string });
         setError(`Invalid JSON format in ground truth file: ${friendlyError}`);
         setGroundTruthFile(null);
         setIsValidatingJson(false);

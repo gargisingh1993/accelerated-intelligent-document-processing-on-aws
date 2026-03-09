@@ -54,7 +54,7 @@ const detectFileType = (objectKey: string, contentType: string | null): string =
   }
   // Fallback to checking file extension
   if (objectKey) {
-    const extension = objectKey.split('.').pop()?.toLowerCase();
+    const extension = objectKey.split('.').pop()?.toLowerCase() ?? '';
     if (extension === 'pdf') return 'pdf';
     if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(extension)) return 'image';
     if (extension === 'html' || extension === 'htm') return 'html';
@@ -109,7 +109,7 @@ const FileViewer = ({ objectKey }: FileViewerProps): React.JSX.Element => {
       setContentType(result.contentType);
 
       // Determine view method based on content type and binary flag
-      let selectedViewMethod;
+      let selectedViewMethod: 'content' | 'presigned';
       if (
         fileType === 'pdf' ||
         fileType === 'excel' ||

@@ -1,3 +1,7 @@
+---
+title: "JSON Schema Migration Guide"
+---
+
 # JSON Schema Migration Guide
 
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.

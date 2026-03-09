@@ -6,6 +6,30 @@ GREEN := \033[0;32m
 YELLOW := \033[1;33m
 NC := \033[0m  # No Color
 
+# Update version across all packages
+# Usage: make version V=0.6.0
+.PHONY: version
+version:
+ifndef V
+	$(error VERSION is not set. Usage: make version V=x.y.z)
+endif
+	@echo "Updating version to $(V)..."
+	@echo "$(V)" > VERSION
+	@sed -i '' 's/^version = ".*"/version = "$(V)"/' lib/idp_cli_pkg/pyproject.toml
+	@sed -i '' 's/^version = ".*"/version = "$(V)"/' lib/idp_sdk/pyproject.toml
+	@sed -i '' 's/^version = ".*"/version = "$(V)"/' lib/idp_common_pkg/pyproject.toml
+	@sed -i '' 's/version=".*"/version="$(V)"/' lib/idp_common_pkg/setup.py
+	@sed -i '' 's/@click.version_option(version=".*")/@click.version_option(version="$(V)")/' lib/idp_cli_pkg/idp_cli/cli.py
+	@sed -i '' 's/^__version__ = ".*"/__version__ = "$(V)"/' lib/idp_sdk/idp_sdk/__init__.py
+	@echo -e "$(GREEN)✅ Version updated to $(V) in:$(NC)"
+	@echo "  - VERSION"
+	@echo "  - lib/idp_cli_pkg/pyproject.toml"
+	@echo "  - lib/idp_cli_pkg/idp_cli/cli.py"
+	@echo "  - lib/idp_sdk/pyproject.toml"
+	@echo "  - lib/idp_sdk/idp_sdk/__init__.py"
+	@echo "  - lib/idp_common_pkg/pyproject.toml"
+	@echo "  - lib/idp_common_pkg/setup.py"
+
 # Default target - run both lint and test
 all: lint test
 
@@ -235,6 +259,32 @@ fastcommit: fastlint
 	git add . && \
 	git commit -am "$${COMMIT_MESSAGE}" && \
 	git push
+
+# Build and serve the documentation site locally
+# Usage: make docs          - rebuild and serve preview
+#        make docs-setup    - one-time setup (symlinks + npm install)
+#        make docs-build    - build only (no serve)
+docs: docs-build
+	@echo "Starting docs preview server..."
+	cd docs-site && npm run preview
+
+docs-setup:
+	@echo "Setting up documentation site..."
+	cd docs-site && bash setup.sh && npm install
+	@echo -e "$(GREEN)✅ Docs site setup complete!$(NC)"
+
+docs-build: docs-setup
+	@echo "Building documentation site..."
+	cd docs-site && npm run build
+	@echo -e "$(GREEN)✅ Docs site built! $(NC)"
+	@echo "Preview at: http://localhost:4321"
+
+# Deploy docs to GitHub Pages (from local build)
+docs-deploy: docs-build
+	@echo "Deploying documentation site to GitHub Pages..."
+	touch docs-site/dist/.nojekyll
+	cd docs-site && npx gh-pages -d dist --dotfiles
+	@echo -e "$(GREEN)✅ Docs deployed to GitHub Pages!$(NC)"
 
 # DSR (Deliverable Security Review) targets
 dsr-setup:

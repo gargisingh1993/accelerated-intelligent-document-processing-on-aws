@@ -1,3 +1,7 @@
+---
+title: "Upgrading to the Unified Pattern (v0.5.x)"
+---
+
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 SPDX-License-Identifier: MIT-0
 

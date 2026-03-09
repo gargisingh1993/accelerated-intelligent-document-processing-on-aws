@@ -1,3 +1,7 @@
+---
+title: "Rule Validation"
+---
+
 # Rule Validation
 
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.

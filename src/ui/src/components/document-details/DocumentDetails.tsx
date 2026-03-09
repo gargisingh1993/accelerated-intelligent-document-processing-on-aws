@@ -26,7 +26,7 @@ interface MappedDocument {
 
 interface AbortableItem {
   objectKey: string;
-  [key: string]: unknown;
+  objectStatus?: string;
 }
 
 const logger = new ConsoleLogger('documentDetails');
@@ -37,7 +37,7 @@ const DocumentDetails = (): React.JSX.Element => {
 
   // Get the objectKey from the wildcard route parameter '*'
   // This captures the full path including any embedded slashes (e.g., folder/filename.pdf)
-  let objectKey = params['*'];
+  let objectKey = params['*'] ?? '';
 
   // Ensure we properly decode the objectKey from the URL parameter
   // It may be already decoded or still encoded depending on browser behavior with refreshes
@@ -48,14 +48,8 @@ const DocumentDetails = (): React.JSX.Element => {
     logger.debug('Error decoding objectKey, using as is', e);
   }
 
-  const documentsContext = useDocumentsContext() as Record<string, unknown>;
-  const documents = documentsContext.documents as Record<string, unknown>[];
-  const getDocumentDetailsFromIds = documentsContext.getDocumentDetailsFromIds as (ids: string[]) => Promise<Record<string, unknown>[]>;
-  const setToolsOpen = documentsContext.setToolsOpen as (open: boolean) => void;
-  const deleteDocuments = documentsContext.deleteDocuments as (ids: string[]) => Promise<unknown>;
-  const reprocessDocuments = documentsContext.reprocessDocuments as (ids: string[], version?: string) => Promise<unknown>;
-  const abortWorkflows = documentsContext.abortWorkflows as (ids: string[]) => Promise<unknown>;
-  const { settings: _settings } = useSettingsContext() as Record<string, unknown>;
+  const { documents, getDocumentDetailsFromIds, setToolsOpen, deleteDocuments, reprocessDocuments, abortWorkflows } = useDocumentsContext();
+  const { settings: _settings } = useSettingsContext();
   const { canWrite } = useUserRole();
 
   const [document, setDocument] = useState<MappedDocument | null>(null);
@@ -91,11 +85,11 @@ const DocumentDetails = (): React.JSX.Element => {
   // subscriptions (which includes all fields). We must merge carefully to avoid
   // overwriting full document data with lightweight list data.
   useEffect(() => {
-    if (!objectKey || !(documents as unknown[])?.length) {
+    if (!objectKey || !documents?.length) {
       return;
     }
 
-    const documentsFiltered = (documents as Record<string, unknown>[]).filter((c: Record<string, unknown>) => c.ObjectKey === objectKey);
+    const documentsFiltered = documents.filter((c) => c.ObjectKey === objectKey);
     if (documentsFiltered && documentsFiltered?.length) {
       const documentsMap = mapDocumentsAttributes([documentsFiltered[0]] as unknown as { ObjectKey: string }[]) as MappedDocument[];
       const incomingDoc = documentsMap[0];
