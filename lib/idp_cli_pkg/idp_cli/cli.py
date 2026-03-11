@@ -3727,6 +3727,8 @@ def config_upload(
 
             # Set env var for ConfigurationManager to find the table
             os.environ["CONFIGURATION_TABLE_NAME"] = config_table
+            if region:
+                os.environ["AWS_DEFAULT_REGION"] = region
 
             manager = ConfigurationManager()
 
@@ -4545,10 +4547,10 @@ def discover(
             )
             console.print("[green]✓ Batch discovery complete[/green]")
 
-        if stack_name and succeeded > 0:
+        if stack_name and config_version and succeeded > 0:
             console.print(
                 f"[green]✓ Schema(s) saved to configuration"
-                f"{' (version: ' + config_version + ')' if config_version else ''}[/green]"
+                f" (version: {config_version})[/green]"
             )
 
         if failed > 0:

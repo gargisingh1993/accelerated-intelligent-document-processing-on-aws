@@ -15,7 +15,7 @@ The GenAIIDP solution provides multiple configuration approaches to customize do
 
 The web interface allows real-time configuration updates without stack redeployment:
 
-- **Document Classes**: Define and modify document categories and their descriptions (using JSON Schema format)
+- **Document Classes**: Define and modify document categories and their descriptions (using JSON Schema format). Choose from **35+ pre-built standard classes** (Invoice, Receipt, W-2, Bank Statement, etc.) or create custom classes from scratch.
 - **Extraction Attributes**: Configure fields to extract for each document class (defined as JSON Schema properties)
 - **Few Shot Examples**: Upload and configure example documents to improve accuracy (supported in Pattern 2)
 - **Model Selection**: Choose between available Bedrock models for classification and extraction

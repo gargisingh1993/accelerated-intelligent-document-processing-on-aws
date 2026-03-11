@@ -6,8 +6,9 @@
 import json
 import logging
 import os
+import re
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from idp_sdk.exceptions import IDPConfigurationError, IDPResourceNotFoundError
 from idp_sdk.models.discovery import DiscoveryBatchResult, DiscoveryResult
@@ -116,14 +117,32 @@ class DiscoveryOperation:
 
             from idp_common.discovery.classes_discovery import ClassesDiscovery
 
-            # ClassesDiscovery reads config from DynamoDB but we pass file_bytes
-            # so it never reads from S3. input_prefix is used only for extension.
-            discovery = ClassesDiscovery(
-                input_bucket="local",
-                input_prefix=doc_path.name,
-                region=self._client._region,
-                version=config_version,
-            )
+            # Try loading the requested config version; fall back to active
+            # config if the version doesn't exist yet (user wants to create it).
+            try:
+                discovery = ClassesDiscovery(
+                    input_bucket="local",
+                    input_prefix=doc_path.name,
+                    region=self._client._region,
+                    version=config_version,
+                )
+            except Exception:
+                if config_version is None:
+                    raise
+                logger.warning(
+                    f"Config version '{config_version}' not found, "
+                    f"reading from active config and saving to '{config_version}'"
+                )
+                discovery = ClassesDiscovery(
+                    input_bucket="local",
+                    input_prefix=doc_path.name,
+                    region=self._client._region,
+                    version=None,
+                )
+                discovery.version = config_version
+
+            # Only save to config if a version was explicitly specified
+            save = config_version is not None
 
             if gt_data:
                 result = discovery.discovery_classes_with_document_and_ground_truth(
@@ -131,14 +150,14 @@ class DiscoveryOperation:
                     input_prefix=doc_path.name,
                     file_bytes=file_bytes,
                     ground_truth_data=gt_data,
-                    save_to_config=True,
+                    save_to_config=save,
                 )
             else:
                 result = discovery.discovery_classes_with_document(
                     input_bucket="local",
                     input_prefix=doc_path.name,
                     file_bytes=file_bytes,
-                    save_to_config=True,
+                    save_to_config=save,
                 )
 
             schema = result.get("schema")
@@ -167,6 +186,7 @@ class DiscoveryOperation:
         doc_path: Path,
         file_bytes: bytes,
         gt_data: Optional[dict],
+        max_retries: int = 3,
     ) -> DiscoveryResult:
         """Local mode: uses system defaults, no stack needed, no config save."""
         try:
@@ -202,8 +222,6 @@ class DiscoveryOperation:
             else:
                 user_prompt = mode_cfg.get("user_prompt") or _prompt_without_gt()
 
-            full_prompt = f"{user_prompt}\nFormat the extracted data using the below JSON format:\n{sample_format}"
-
             # Create content with file bytes
             file_extension = doc_path.suffix.lower().lstrip(".")
             if file_extension == "pdf":
@@ -215,35 +233,74 @@ class DiscoveryOperation:
                             "source": {"bytes": file_bytes},
                         }
                     },
-                    {"text": full_prompt},
                 ]
             else:
-                image_content = image.prepare_bedrock_image_attachment(file_bytes)
-                content = [image_content, {"text": full_prompt}]
+                content = [image.prepare_bedrock_image_attachment(file_bytes)]
 
-            # Call Bedrock
+            # Call Bedrock with retry/validation loop
             region = self._client._region or os.environ.get("AWS_REGION", "us-west-2")
-            client = bedrock.BedrockClient(region=region)
-            response = client.invoke_model(
-                model_id=model_id,
-                system_prompt=system_prompt,
-                content=content,
-                temperature=temperature,
-                top_p=top_p,
-                max_tokens=max_tokens,
-                context="ClassesDiscoveryLocal",
-            )
+            bedrock_client = bedrock.BedrockClient(region=region)
 
-            content_text = bedrock.extract_text_from_response(response)
-            schema = json.loads(content_text)
+            validation_feedback = ""
+            for attempt in range(max_retries):
+                try:
+                    retry_prompt = ""
+                    if attempt > 0 and validation_feedback:
+                        retry_prompt = (
+                            f"\n\nPREVIOUS ATTEMPT FAILED: {validation_feedback}\n"
+                            f"Please fix the issue and generate a valid JSON Schema.\n\n"
+                        )
 
-            doc_class = schema.get("$id") or schema.get("x-aws-idp-document-type")
+                    full_prompt = (
+                        f"{retry_prompt}{user_prompt}\n"
+                        f"Format the extracted data using the below JSON format:\n{sample_format}"
+                    )
+
+                    response = bedrock_client.invoke_model(
+                        model_id=model_id,
+                        system_prompt=system_prompt,
+                        content=content + [{"text": full_prompt}],
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                        context="ClassesDiscoveryLocal",
+                    )
+
+                    content_text = bedrock.extract_text_from_response(response)
+                    schema = json.loads(_extract_json(content_text))
+
+                    is_valid, error_msg = _validate_json_schema(schema)
+                    if is_valid:
+                        logger.info(
+                            f"Successfully generated valid JSON Schema on attempt {attempt + 1}"
+                        )
+                        doc_class = schema.get("$id") or schema.get(
+                            "x-aws-idp-document-type"
+                        )
+                        return DiscoveryResult(
+                            status="SUCCESS",
+                            document_class=doc_class,
+                            json_schema=schema,
+                            document_path=str(doc_path),
+                        )
+                    else:
+                        validation_feedback = error_msg
+                        logger.warning(
+                            f"Invalid schema on attempt {attempt + 1}: {error_msg}"
+                        )
+
+                except json.JSONDecodeError as e:
+                    validation_feedback = f"Invalid JSON format: {str(e)}"
+                    logger.warning(f"JSON parse error on attempt {attempt + 1}: {e}")
+                except Exception as e:
+                    logger.error(f"Error on attempt {attempt + 1}: {e}")
+                    if attempt == max_retries - 1:
+                        raise
 
             return DiscoveryResult(
-                status="SUCCESS",
-                document_class=doc_class,
-                json_schema=schema,
+                status="FAILED",
                 document_path=str(doc_path),
+                error=f"Failed to generate valid schema after {max_retries} attempts",
             )
 
         except Exception as e:
@@ -317,6 +374,32 @@ class DiscoveryOperation:
                     return resource.get("PhysicalResourceId", "")
 
         raise IDPResourceNotFoundError("ConfigurationTable not found in stack.")
+
+
+# --- Helpers for local mode ---
+
+
+def _extract_json(text: str) -> str:
+    """Strip markdown code fences from LLM response before JSON parsing."""
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+    if match:
+        return match.group(1)
+    return text
+
+
+def _validate_json_schema(schema: Dict[str, Any]) -> tuple:
+    """Validate that the response is a valid JSON Schema."""
+    required_fields = ["$schema", "$id", "type", "properties"]
+    for field in required_fields:
+        if field not in schema:
+            return False, f"Missing required field: {field}"
+    if "x-aws-idp-document-type" not in schema:
+        return False, "Missing x-aws-idp-document-type field"
+    if schema.get("type") != "object":
+        return False, "Root type must be 'object'"
+    if not isinstance(schema.get("properties"), dict):
+        return False, "Properties must be an object"
+    return True, ""
 
 
 # --- Standalone prompt helpers for local mode ---

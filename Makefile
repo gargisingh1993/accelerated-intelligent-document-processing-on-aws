@@ -286,6 +286,13 @@ docs-deploy: docs-build
 	cd docs-site && npx gh-pages -d dist --dotfiles
 	@echo -e "$(GREEN)✅ Docs deployed to GitHub Pages!$(NC)"
 
+# Generate standard class catalog from BDA standard blueprints
+# Fetches all AWS standard blueprints and converts them to IDP class schemas
+classes-from-bda:
+	@echo "Generating standard class catalog from BDA standard blueprints..."
+	python3 scripts/generate_standard_classes.py --region us-east-1 --output src/ui/src/data/standard-classes.json
+	@echo -e "$(GREEN)✅ Standard class catalog updated! Review changes in src/ui/src/data/standard-classes.json$(NC)"
+
 # DSR (Deliverable Security Review) targets
 dsr-setup:
 	@echo "Setting up DSR tool..."

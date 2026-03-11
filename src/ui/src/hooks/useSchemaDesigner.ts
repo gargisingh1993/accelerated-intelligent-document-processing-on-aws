@@ -55,6 +55,7 @@ interface UseSchemaDesignerReturn {
   setSelectedAttributeId: React.Dispatch<React.SetStateAction<string | null>>;
   isDirty: boolean;
   addClass: (name: string, description?: string) => SchemaClass;
+  addStandardClasses: (schemas: JsonSchemaProperty[]) => void;
   updateClass: (classId: string, updates: Record<string, unknown>) => void;
   removeClass: (classId: string) => void;
   addAttribute: (classId: string, attributeName: string, attributeType: string) => SchemaAttribute;
@@ -342,6 +343,18 @@ export const useSchemaDesigner = (
     setSelectedClassId(newClass.id);
     setIsDirty(true);
     return newClass;
+  }, []);
+
+  const addStandardClasses = useCallback((schemas: JsonSchemaProperty[]) => {
+    // Convert the standard JSON schemas to internal SchemaClass format
+    // This reuses the same convertJsonSchemaToClasses logic used for import
+    const newClasses = convertJsonSchemaToClasses(schemas);
+    if (newClasses.length > 0) {
+      setClasses((prev) => [...prev, ...newClasses]);
+      setSelectedClassId(newClasses[0].id);
+      setSelectedAttributeId(null);
+      setIsDirty(true);
+    }
   }, []);
 
   const updateClass = useCallback((classId: string, updates: Record<string, unknown>) => {
@@ -778,6 +791,7 @@ export const useSchemaDesigner = (
     setSelectedAttributeId,
     isDirty,
     addClass,
+    addStandardClasses,
     updateClass,
     removeClass,
     addAttribute,

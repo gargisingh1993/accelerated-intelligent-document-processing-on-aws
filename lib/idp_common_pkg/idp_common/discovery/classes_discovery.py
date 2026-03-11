@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, Optional, cast
 
 import jsonschema
@@ -246,6 +247,14 @@ class ClassesDiscovery:
             "Config", existing_custom, version=self.version
         )
 
+    @staticmethod
+    def _extract_json(text: str) -> str:
+        """Strip markdown code fences from LLM response before JSON parsing."""
+        match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
+        if match:
+            return match.group(1)
+        return text
+
     def _validate_json_schema(self, schema: Dict[str, Any]) -> tuple[bool, str]:
         """
         Validate that the response is a valid JSON Schema.
@@ -367,7 +376,7 @@ class ClassesDiscovery:
                 )
 
                 # Parse JSON response
-                schema = json.loads(content_text)
+                schema = json.loads(self._extract_json(content_text))
 
                 # Validate the schema
                 is_valid, error_msg = self._validate_json_schema(schema)
@@ -493,7 +502,7 @@ class ClassesDiscovery:
                 )
 
                 # Parse JSON response
-                schema = json.loads(content_text)
+                schema = json.loads(self._extract_json(content_text))
 
                 # Validate the schema
                 is_valid, error_msg = self._validate_json_schema(schema)

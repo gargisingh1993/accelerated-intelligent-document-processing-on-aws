@@ -970,6 +970,12 @@ Resources:
             reason: "Function does not require VPC access as it only interacts with AWS services via APIs"
           - id: W92
             reason: "Function does not require reserved concurrency as it scales based on demand"
+          - id: F38
+            reason: "PassRole permission is required to delegate the execution role to the Bedrock AgentCore Gateway service securely"
+          - id: F3
+            reason: "Wildcard actions required for AgentCore Gateway lifecycle management (create, update, delete) and CloudWatch Logs delivery configuration"
+          - id: W11
+            reason: "Wildcard resource required as AgentCore Gateway ARNs are dynamically generated and unknown at deployment time"
     # checkov:skip=CKV_AWS_116: "DLQ not required for Cfn Custom Resource function"
     # checkov:skip=CKV_AWS_117: "Function does not require VPC access as it only interacts with AWS services via APIs"
     # checkov:skip=CKV_AWS_115: "Function does not require reserved concurrency as it scales based on demand"
@@ -1092,6 +1098,7 @@ Resources:
     # checkov:skip=CKV_AWS_116: "DLQ not required for Cfn Custom Resource function"
     # checkov:skip=CKV_AWS_117: "Function does not require VPC access"
     # checkov:skip=CKV_AWS_115: "Function does not require reserved concurrency"
+    # checkov:skip=CKV_AWS_173: "Environment variables contain non-sensitive configuration values (log level only)"
     Properties:
       PermissionsBoundary:
         !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
@@ -3031,6 +3038,7 @@ Resources:
     # checkov:skip=CKV_AWS_116: "DLQ not required for Custom Resource function"
     # checkov:skip=CKV_AWS_117: "Function does not require VPC access"
     # checkov:skip=CKV_AWS_115: "Function does not require reserved concurrency"
+    # checkov:skip=CKV_AWS_173: "Environment variables contain non-sensitive configuration values (log level only)"
     Properties:
       PermissionsBoundary:
         !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
@@ -4920,6 +4928,7 @@ Resources:
     # checkov:skip=CKV_AWS_116: "DLQ not required for capacity planning function"
     # checkov:skip=CKV_AWS_117: "Function does not require VPC access"
     # checkov:skip=CKV_AWS_115: "Function does not require reserved concurrency"
+    # checkov:skip=CKV_AWS_173: "Environment variables contain non-sensitive configuration values (log level and feature flags)"
     Properties:
       PermissionsBoundary:
         !If [
@@ -4998,6 +5007,7 @@ Resources:
     # checkov:skip=CKV_AWS_116: "DLQ not required"
     # checkov:skip=CKV_AWS_117: "VPC not required"
     # checkov:skip=CKV_AWS_115: "Reserved concurrency not required"
+    # checkov:skip=CKV_AWS_173: "Environment variables contain non-sensitive configuration values (log level only)"
     Properties:
       PermissionsBoundary:
         !If [
@@ -6221,6 +6231,7 @@ Resources:
     # checkov:skip=CKV_AWS_116: "DLQ configured for SQS triggered function"
     # checkov:skip=CKV_AWS_117: "Function does not require VPC access as it only interacts with AWS services via APIs"
     # checkov:skip=CKV_AWS_115: "Function does not require reserved concurrency as it scales based on demand"
+    # checkov:skip=CKV_AWS_173: "Environment variables contain non-sensitive configuration values (bucket names and log level)"
     Properties:
       PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
       Handler: index.handler
@@ -6765,6 +6776,7 @@ Resources:
     # checkov:skip=CKV_AWS_116: "DLQ not required for AppSync resolver"
     # checkov:skip=CKV_AWS_117: "Function does not require VPC access"
     # checkov:skip=CKV_AWS_115: "Function does not require reserved concurrency"
+    # checkov:skip=CKV_AWS_173: "Environment variables contain non-sensitive configuration values (Cognito pool and group IDs)"
     Properties:
       PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
       Handler: index.handler
@@ -6824,6 +6836,7 @@ Resources:
     # checkov:skip=CKV_AWS_116: "DLQ not required for DynamoDB stream processing"
     # checkov:skip=CKV_AWS_117: "Function does not require VPC access"
     # checkov:skip=CKV_AWS_115: "Function does not require reserved concurrency"
+    # checkov:skip=CKV_AWS_173: "Environment variables contain non-sensitive configuration values (Cognito pool and group IDs)"
     Properties:
       PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
       Handler: index.handler
@@ -6875,6 +6888,7 @@ Resources:
     # checkov:skip=CKV_AWS_116: "DLQ not required for AppSync resolver"
     # checkov:skip=CKV_AWS_117: "Function does not require VPC access"
     # checkov:skip=CKV_AWS_115: "Function does not require reserved concurrency"
+    # checkov:skip=CKV_AWS_173: "Environment variables contain non-sensitive configuration values (DynamoDB table name)"
     Properties:
       PermissionsBoundary: !If [HasPermissionsBoundary, !Ref PermissionsBoundaryArn, !Ref AWS::NoValue]
       Handler: index.handler
