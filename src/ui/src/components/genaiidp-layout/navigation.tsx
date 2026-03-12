@@ -37,7 +37,7 @@ export const adminNavItems = [
       { type: 'link', text: 'Discovery', href: `#${DISCOVERY_PATH}` },
       { type: 'link', text: 'Capacity Planning', href: `#${CAPACITY_PLANNING_PATH}` },
       { type: 'link', text: 'User Management', href: `#${USER_MANAGEMENT_PATH}` },
-      { type: 'link', text: 'View Pricing', href: `#${PRICING_PATH}` },
+      { type: 'link', text: 'View / Edit Pricing', href: `#${PRICING_PATH}` },
     ],
   },
   {
