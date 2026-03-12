@@ -875,8 +875,21 @@ const useAgentChat = (config: Partial<AgentChatConfig> = {}): UseAgentChatReturn
 
       return response;
     } catch (err) {
+      // Extract detailed error message from GraphQL errors
+      const gqlErr = err as { errors?: { message: string; errorType?: string }[]; message?: string };
+      let errorMessage = 'Failed to send message. Please try again.';
+      if (gqlErr.errors && gqlErr.errors.length > 0) {
+        const firstError = gqlErr.errors[0];
+        if (firstError.errorType === 'Unauthorized') {
+          errorMessage = `Access denied: ${firstError.message}. Check your role permissions.`;
+        } else {
+          errorMessage = firstError.message || errorMessage;
+        }
+      } else if (gqlErr.message) {
+        errorMessage = gqlErr.message;
+      }
       updateAgentChatState({
-        error: 'Failed to send message. Please try again.',
+        error: errorMessage,
         waitingForResponse: false,
       });
       logger.error('Chat error:', err);

@@ -680,6 +680,9 @@ type Mutation {
     @aws_auth(cognito_groups: ["Admin", "Reviewer"])
 
   # Admin + Author + Viewer operations (Agent Chat - creates state but read-like)
+  # sendAgentChatMessage: Called from UI only (Cognito), but needs @aws_iam too for
+  # AppSync to properly resolve the AgentChatMessage return type for both auth modes
+  # updateAgentChatMessage: Called by backend Lambda (IAM) to push streaming messages
   sendAgentChatMessage(
     prompt: String!
     sessionId: String
@@ -687,19 +690,19 @@ type Mutation {
     enableCodeIntelligence: Boolean
     toolMetadata: ToolMetadataInput
   ): AgentChatMessage
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
+    @aws_cognito_user_pools
     @aws_iam
   updateAgentChatMessage(sessionId: ID!, content: String!): AgentChatMessage
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
+    @aws_cognito_user_pools
     @aws_iam
   deleteChatSession(sessionId: ID!): Boolean
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
+    @aws_cognito_user_pools
     @aws_iam
   updateChatSessionTitle(sessionId: ID!, title: String!): ChatSession
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
+    @aws_cognito_user_pools
     @aws_iam
   deleteAgentJob(jobId: ID!): Boolean
-    @aws_auth(cognito_groups: ["Admin", "Author", "Viewer"])
+    @aws_cognito_user_pools
 }
 
 type DocumentPage @aws_cognito_user_pools @aws_iam {
