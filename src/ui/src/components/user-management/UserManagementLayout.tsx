@@ -26,7 +26,12 @@ import useUserRole from '../../hooks/use-user-role';
 import useAppContext from '../../contexts/app';
 import useSettingsContext from '../../contexts/settings';
 import useConfigurationVersions from '../../hooks/use-configuration-versions';
-import { listUsers, createUser as createUserMutation, deleteUser as deleteUserMutation } from '../../graphql/generated';
+import {
+  listUsers,
+  createUser as createUserMutation,
+  deleteUser as deleteUserMutation,
+  updateUser as updateUserMutation,
+} from '../../graphql/generated';
 import { getErrorMessage } from '../../utils/errorUtils';
 
 const logger = new ConsoleLogger('UserManagementLayout');
@@ -49,9 +54,12 @@ const UserManagementLayout = (): React.JSX.Element => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditScopeModal, setShowEditScopeModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [email, setEmail] = useState('');
   const [persona, setPersona] = useState('Reviewer');
   const [selectedConfigVersions, setSelectedConfigVersions] = useState<readonly { label: string; value: string }[]>([]);
+  const [editScopeVersions, setEditScopeVersions] = useState<readonly { label: string; value: string }[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [emailError, setEmailError] = useState('');
@@ -183,6 +191,50 @@ const UserManagementLayout = (): React.JSX.Element => {
     }
   };
 
+  const handleEditScope = (user: User) => {
+    setEditingUser(user);
+    // Pre-populate with current scope
+    const currentScope = user.allowedConfigVersions?.filter((v): v is string => v !== null) || [];
+    setEditScopeVersions(
+      currentScope.map((v) => ({
+        label: v,
+        value: v,
+      })),
+    );
+    setShowEditScopeModal(true);
+    fetchVersions();
+  };
+
+  const saveEditScope = async () => {
+    if (!editingUser || !awsConfig) return;
+
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const client = generateClient();
+      const allowedConfigVersions = editScopeVersions.length > 0 ? editScopeVersions.map((opt) => opt.value) : null;
+      logger.debug('Updating user scope:', { userId: editingUser.userId, allowedConfigVersions });
+      await client.graphql({
+        query: updateUserMutation,
+        variables: { userId: editingUser.userId, allowedConfigVersions },
+      });
+
+      logger.debug('User scope updated successfully');
+      setSuccess(`Scope updated for ${editingUser.email}`);
+      setShowEditScopeModal(false);
+      setEditingUser(null);
+      setEditScopeVersions([]);
+      await loadUsers();
+    } catch (err) {
+      logger.error('Failed to update user scope:', err);
+      setError(`Failed to update scope: ${getErrorMessage(err)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const deleteUser = async (userId: string, userEmail: string): Promise<void> => {
     if (!window.confirm(`Are you sure you want to delete user ${userEmail}?`)) {
       return;
@@ -227,8 +279,13 @@ const UserManagementLayout = (): React.JSX.Element => {
 
   const handleCreateModalOpen = () => {
     setShowCreateModal(true);
-    // Fetch config versions when modal opens
     fetchVersions();
+  };
+
+  const handleEditScopeModalClose = () => {
+    setShowEditScopeModal(false);
+    setEditingUser(null);
+    setEditScopeVersions([]);
   };
 
   const handleRefresh = () => {
@@ -261,15 +318,15 @@ const UserManagementLayout = (): React.JSX.Element => {
     );
   }
 
-  const formatConfigVersions = (versions: (string | null)[] | null | undefined): React.ReactNode => {
-    if (!versions || versions.length === 0) {
+  const formatConfigVersions = (userVersions: (string | null)[] | null | undefined): React.ReactNode => {
+    if (!userVersions || userVersions.length === 0) {
       return (
         <Box color="text-body-secondary">
           <em>All versions</em>
         </Box>
       );
     }
-    const validVersions = versions.filter((v): v is string => v !== null);
+    const validVersions = userVersions.filter((v): v is string => v !== null);
     return (
       <SpaceBetween direction="horizontal" size="xxs">
         {validVersions.map((v) => (
@@ -325,9 +382,16 @@ const UserManagementLayout = (): React.JSX.Element => {
       id: 'actions',
       header: 'Actions',
       cell: (item: User) => (
-        <Button variant="link" onClick={() => deleteUser(item.userId, item.email)} disabled={loading || refreshing}>
-          Delete
-        </Button>
+        <SpaceBetween direction="horizontal" size="xs">
+          {item.persona !== 'Admin' && (
+            <Button variant="link" onClick={() => handleEditScope(item)} disabled={loading || refreshing}>
+              Edit scope
+            </Button>
+          )}
+          <Button variant="link" onClick={() => deleteUser(item.userId, item.email)} disabled={loading || refreshing}>
+            Delete
+          </Button>
+        </SpaceBetween>
       ),
     },
   ];
@@ -389,6 +453,7 @@ const UserManagementLayout = (): React.JSX.Element => {
           }
         />
 
+        {/* Create User Modal */}
         <Modal
           visible={showCreateModal}
           onDismiss={handleCreateModalClose}
@@ -434,16 +499,47 @@ const UserManagementLayout = (): React.JSX.Element => {
                   </span>
                 }
                 description="Restrict this user to specific configuration versions. Leave empty for unrestricted access to all versions."
-                info={
-                  <Box color="text-body-secondary" fontSize="body-s">
-                    Note: Scope enforcement at the API level is planned for a future release. Scopes assigned now will be enforced when that
-                    feature is available.
-                  </Box>
-                }
               >
                 <Multiselect
                   selectedOptions={selectedConfigVersions}
                   onChange={({ detail }) => setSelectedConfigVersions(detail.selectedOptions as { label: string; value: string }[])}
+                  options={configVersionOptions}
+                  placeholder="All versions (unrestricted)"
+                  filteringType="auto"
+                  tokenLimit={3}
+                />
+              </FormField>
+            </SpaceBetween>
+          </Form>
+        </Modal>
+
+        {/* Edit Scope Modal */}
+        <Modal
+          visible={showEditScopeModal}
+          onDismiss={handleEditScopeModalClose}
+          header={`Edit Config Version Scope — ${editingUser?.email ?? ''}`}
+          footer={
+            <Box float="right">
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button variant="link" onClick={handleEditScopeModalClose}>
+                  Cancel
+                </Button>
+                <Button variant="primary" onClick={saveEditScope} loading={loading}>
+                  Save Scope
+                </Button>
+              </SpaceBetween>
+            </Box>
+          }
+        >
+          <Form>
+            <SpaceBetween size="l">
+              <FormField
+                label="Configuration Version Scope"
+                description="Select which configuration versions this user can access. Clear all to give unrestricted access."
+              >
+                <Multiselect
+                  selectedOptions={editScopeVersions}
+                  onChange={({ detail }) => setEditScopeVersions(detail.selectedOptions as { label: string; value: string }[])}
                   options={configVersionOptions}
                   placeholder="All versions (unrestricted)"
                   filteringType="auto"

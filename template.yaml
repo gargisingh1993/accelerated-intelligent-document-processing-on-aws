@@ -1293,6 +1293,10 @@ Resources:
         IDPCommonBaseLayerArn: !Ref IDPCommonBaseLayer
         IDPCommonAgentsLayerArn: !Ref IDPCommonAgentsLayer
         
+        # User management (for config-version scoping)
+        UsersTableName: !Ref UsersTable
+        UsersTableArn: !GetAtt UsersTable.Arn
+        
   CustomerManagedEncryptionKey:
     DependsOn:
       - IsStacknameLengthOK
@@ -6984,6 +6988,24 @@ Resources:
       DataSourceName: !GetAtt UserManagementDataSource.Name
       TypeName: Query
       FieldName: listUsers
+
+  UpdateUserResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: APPSYNCSTACK
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      DataSourceName: !GetAtt UserManagementDataSource.Name
+      TypeName: Mutation
+      FieldName: updateUser
+
+  GetMyProfileResolver:
+    Type: AWS::AppSync::Resolver
+    DependsOn: APPSYNCSTACK
+    Properties:
+      ApiId: !GetAtt GraphQLApi.ApiId
+      DataSourceName: !GetAtt UserManagementDataSource.Name
+      TypeName: Query
+      FieldName: getMyProfile
 
   CompleteSectionReviewDataSource:
     Type: AWS::AppSync::DataSource

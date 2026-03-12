@@ -11,6 +11,7 @@ import {
   deleteConfigVersion as deleteConfigVersionOp,
 } from '../graphql/generated';
 import useConfiguration from './use-configuration';
+import useUserRole from './use-user-role';
 import type { ConfigVersion } from '../components/test-studio/utils/configVersionUtils';
 
 const client = generateClient();
@@ -38,12 +39,18 @@ interface UseConfigurationVersionsReturn {
 }
 
 const useConfigurationVersions = (): UseConfigurationVersionsReturn => {
-  const [versions, setVersions] = useState<ConfigVersion[]>([]);
+  const [allVersions, setAllVersions] = useState<ConfigVersion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Get updateConfiguration from useConfiguration hook
   const { updateConfiguration } = useConfiguration();
+
+  // Get user's config version scope for filtering
+  const { allowedConfigVersions } = useUserRole();
+
+  // Filter versions by user's allowed scope (null = unrestricted)
+  const versions = allowedConfigVersions ? allVersions.filter((v) => allowedConfigVersions.includes(v.versionName)) : allVersions;
 
   const fetchVersions = async (): Promise<void> => {
     setLoading(true);
@@ -67,7 +74,7 @@ const useConfigurationVersions = (): UseConfigurationVersionsReturn => {
         'Fetched versions:',
         fetchedVersions.map((v) => ({ name: v.versionName, description: v.description, created: v.created, isActive: v.isActive })),
       );
-      setVersions(fetchedVersions);
+      setAllVersions(fetchedVersions);
     } catch (err: unknown) {
       logger.error('Error fetching configuration versions:', err);
       console.error('Full error object:', err);

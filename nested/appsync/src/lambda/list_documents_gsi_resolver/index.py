@@ -18,6 +18,7 @@ Performance: O(matched items) instead of O(total table items)
 import json
 import logging
 import os
+import time
 from decimal import Decimal
 
 import boto3
@@ -27,6 +28,10 @@ logger = logging.getLogger()
 logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 dynamodb = boto3.resource("dynamodb")
+
+# User scope cache (TTL-based, per Lambda container)
+_user_scope_cache = {}
+_USER_SCOPE_CACHE_TTL = 60  # seconds
 
 # Limits
 DEFAULT_PAGE_SIZE = 50
@@ -50,11 +55,13 @@ class DecimalEncoder(json.JSONEncoder):
 
 
 def _get_caller_identity(event):
-    """Extract caller's Cognito groups and username from AppSync event identity."""
+    """Extract caller's Cognito groups, username, and email from AppSync event identity."""
     identity = event.get("identity", {})
     claims = identity.get("claims", {})
     groups = claims.get("cognito:groups", [])
     username = claims.get("cognito:username", "") or claims.get("sub", "")
+    # Email can be in claims.email or identity.username (AppSync uses email as username)
+    email = claims.get("email", "") or identity.get("username", "") or username
 
     # Groups may be a string if user is in one group
     if isinstance(groups, str):
@@ -63,6 +70,7 @@ def _get_caller_identity(event):
     return {
         "groups": groups,
         "username": username,
+        "email": email,
         "is_admin": "Admin" in groups,
         "is_author": "Author" in groups,
         "is_reviewer": "Reviewer" in groups,
@@ -73,6 +81,45 @@ def _get_caller_identity(event):
 def _is_reviewer_only(caller):
     """Check if caller is a reviewer-only user (no Admin/Author/Viewer groups)."""
     return caller["is_reviewer"] and not caller["is_admin"] and not caller["is_author"] and not caller["is_viewer"]
+
+
+def _get_user_allowed_config_versions(caller_email):
+    """Look up user's allowedConfigVersions from UsersTable with caching.
+    
+    Returns None if unrestricted (no scope set or Admin), or a list of allowed version names.
+    """
+    users_table_name = os.environ.get("USERS_TABLE_NAME", "")
+    if not users_table_name:
+        return None
+    
+    # Check cache
+    now = time.time()
+    cached = _user_scope_cache.get(caller_email)
+    if cached and (now - cached["timestamp"]) < _USER_SCOPE_CACHE_TTL:
+        return cached["scope"]
+    
+    try:
+        users_table = dynamodb.Table(users_table_name)
+        response = users_table.query(
+            IndexName="EmailIndex",
+            KeyConditionExpression=Key("email").eq(caller_email),
+        )
+        items = response.get("Items", [])
+        if items:
+            scope = items[0].get("allowedConfigVersions")
+            if scope and len(scope) > 0:
+                result = list(scope)
+            else:
+                result = None
+        else:
+            result = None
+    except Exception as e:
+        logger.warning(f"Failed to look up user scope for {caller_email}: {e}")
+        result = None
+    
+    # Update cache
+    _user_scope_cache[caller_email] = {"scope": result, "timestamp": now}
+    return result
 
 
 def handler(event, context):
@@ -195,9 +242,27 @@ def list_documents(event):
     
     logger.info(f"Query returned {len(items)} items, has more: {last_key is not None}")
     
+    # Get user's config-version scope for filtering
+    allowed_versions = None
+    if not caller.get("is_admin"):
+        caller_email = caller.get("email", "")
+        users_table = os.environ.get("USERS_TABLE_NAME", "")
+        logger.info(f"Scope check: caller_email={caller_email}, username={caller['username']}, USERS_TABLE_NAME={'set:' + users_table if users_table else 'EMPTY'}")
+        if users_table and caller_email:
+            allowed_versions = _get_user_allowed_config_versions(caller_email)
+            logger.info(f"Config-version scope result for {caller_email}: {allowed_versions or 'unrestricted (no scope set)'}")
+        else:
+            logger.warning(f"Cannot check scope: users_table={'set' if users_table else 'EMPTY'}, email='{caller_email}'")
+    
     # Transform GSI projection items to match the Document GraphQL type
+    # Apply config-version scope filtering (post-query filter since ConfigVersion is in GSI projection)
     documents = []
     for item in items:
+        # Filter by config version scope if user has restrictions
+        if allowed_versions:
+            doc_version = item.get("ConfigVersion") or item.get("ConfigurationVersion")
+            if doc_version and doc_version not in allowed_versions:
+                continue  # Skip documents outside user's scope
         doc = _gsi_item_to_document(item)
         documents.append(doc)
     

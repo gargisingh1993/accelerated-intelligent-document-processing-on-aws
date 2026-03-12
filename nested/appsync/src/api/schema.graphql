@@ -611,6 +611,8 @@ type Mutation {
     @aws_auth(cognito_groups: ["Admin"])
   createUser(email: String!, persona: String!, allowedConfigVersions: [String]): User
     @aws_auth(cognito_groups: ["Admin"])
+  updateUser(userId: ID!, allowedConfigVersions: [String]): User
+    @aws_auth(cognito_groups: ["Admin"])
   deleteUser(userId: ID!): Boolean
     @aws_auth(cognito_groups: ["Admin"])
 
@@ -785,8 +787,9 @@ type Query @aws_cognito_user_pools @aws_iam {
     fileName: String!
   ): ConfigurationLibraryFileResponse @aws_cognito_user_pools
 
-  # User Management query
+  # User Management queries
   listUsers: UserList @aws_cognito_user_pools
+  getMyProfile: User @aws_cognito_user_pools
 }
 
 type Subscription @aws_cognito_user_pools @aws_iam {

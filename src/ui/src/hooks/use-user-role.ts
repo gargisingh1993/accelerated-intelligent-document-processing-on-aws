@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useState, useEffect } from 'react';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import { generateClient } from 'aws-amplify/api';
+import { getMyProfile } from '../graphql/generated';
 
 /**
  * RBAC Role Definitions:
@@ -11,6 +13,7 @@ import { fetchAuthSession } from 'aws-amplify/auth';
  *   Viewer   - Read-only access to documents, config, agent chat, code explorer
  *
  * Users can be in multiple groups (union of permissions applies).
+ * Users can optionally have allowedConfigVersions for config-version scoping.
  */
 interface UserRoleReturn {
   groups: string[];
@@ -30,27 +33,48 @@ interface UserRoleReturn {
   canDeleteConfig: boolean;
   /** True if user can perform HITL reviews (Admin or Reviewer) */
   canReview: boolean;
+  /** Config versions the user is allowed to access. null/undefined = unrestricted (all versions). */
+  allowedConfigVersions: string[] | null;
   loading: boolean;
 }
 
 const useUserRole = (): UserRoleReturn => {
   const [groups, setGroups] = useState<string[]>([]);
+  const [allowedConfigVersions, setAllowedConfigVersions] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchGroups = async () => {
+    const fetchUserData = async () => {
       try {
+        // Fetch Cognito groups from auth session
         const session = await fetchAuthSession();
         const userGroups = session?.tokens?.idToken?.payload?.['cognito:groups'] || [];
-        setGroups(Array.isArray(userGroups) ? (userGroups as string[]) : [userGroups as string]);
+        const groupsArray = Array.isArray(userGroups) ? (userGroups as string[]) : [userGroups as string];
+        setGroups(groupsArray);
+
+        // Fetch user profile for allowedConfigVersions (skip for Admin - always unrestricted)
+        if (!groupsArray.includes('Admin')) {
+          try {
+            const client = generateClient();
+            const result = await client.graphql({ query: getMyProfile });
+            const profile = result.data.getMyProfile;
+            if (profile?.allowedConfigVersions && profile.allowedConfigVersions.length > 0) {
+              const versions = profile.allowedConfigVersions.filter((v): v is string => v !== null);
+              setAllowedConfigVersions(versions.length > 0 ? versions : null);
+            }
+          } catch (profileErr) {
+            console.warn('Could not fetch user profile for scope:', profileErr);
+            // Non-critical - default to unrestricted
+          }
+        }
       } catch (error) {
-        console.error('Error fetching user groups:', error);
+        console.error('Error fetching user role:', error);
         setGroups([]);
       } finally {
         setLoading(false);
       }
     };
-    fetchGroups();
+    fetchUserData();
   }, []);
 
   const isAdmin = groups.includes('Admin');
@@ -78,6 +102,7 @@ const useUserRole = (): UserRoleReturn => {
     canManageUsers,
     canDeleteConfig,
     canReview,
+    allowedConfigVersions,
     loading,
   };
 };

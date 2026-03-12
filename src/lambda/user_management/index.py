@@ -39,6 +39,26 @@ VALID_PERSONAS = {
 }
 
 
+def _get_caller_identity(event):
+    """Extract caller's Cognito groups and email from AppSync event identity."""
+    identity = event.get("identity", {})
+    claims = identity.get("claims", {})
+    groups = claims.get("cognito:groups", [])
+    username = claims.get("cognito:username", "") or claims.get("sub", "")
+    # Email: try claims.email first, then identity.username (AppSync sets this to Cognito username = email)
+    email = claims.get("email", "") or identity.get("username", "") or username
+
+    if isinstance(groups, str):
+        groups = [groups]
+
+    return {
+        "groups": groups,
+        "username": username,
+        "email": email,
+        "is_admin": "Admin" in groups,
+    }
+
+
 def handler(event, context):
     """Handle user management operations from AppSync."""
     logger.info(f"Received event: {event}")
@@ -48,10 +68,14 @@ def handler(event, context):
 
     if field == "createUser":
         return create_user(arguments)
+    elif field == "updateUser":
+        return update_user(arguments)
     elif field == "deleteUser":
         return delete_user(arguments)
     elif field == "listUsers":
-        return list_users()
+        return list_users(event)
+    elif field == "getMyProfile":
+        return get_my_profile(event)
 
     raise ValueError(f"Unknown operation: {field}")
 
@@ -113,7 +137,7 @@ def create_user(args):
         "updatedAt": datetime.utcnow().isoformat() + "Z",
     }
 
-    # Store allowedConfigVersions if provided (Phase 2 - config-version scoping)
+    # Store allowedConfigVersions if provided
     if allowed_config_versions is not None:
         user_record["allowedConfigVersions"] = allowed_config_versions
 
@@ -138,6 +162,59 @@ def create_user(args):
     }
     if allowed_config_versions is not None:
         result["allowedConfigVersions"] = allowed_config_versions
+    return result
+
+
+def update_user(args):
+    """Update user's allowedConfigVersions in DynamoDB. Admin-only operation."""
+    user_id = args["userId"]
+    allowed_config_versions = args.get("allowedConfigVersions")
+
+    logger.info(f"Updating user {user_id} scope: {allowed_config_versions}")
+
+    table = dynamodb.Table(USERS_TABLE_NAME)
+
+    # Get existing user record
+    response = table.get_item(Key={"PK": f"USER#{user_id}", "SK": f"USER#{user_id}"})
+    if not response.get("Item"):
+        raise ValueError(f"User {user_id} not found")
+
+    user_record = response["Item"]
+
+    # Don't allow editing Admin users' scope
+    if user_record.get("persona") == "Admin":
+        raise ValueError("Cannot set config version scope for Admin users")
+
+    # Update the allowedConfigVersions field
+    update_expr = "SET updatedAt = :now"
+    expr_values = {":now": datetime.utcnow().isoformat() + "Z"}
+
+    if allowed_config_versions is not None and len(allowed_config_versions) > 0:
+        update_expr += ", allowedConfigVersions = :acv"
+        expr_values[":acv"] = allowed_config_versions
+    else:
+        # Remove scope restriction (unrestricted access)
+        update_expr += " REMOVE allowedConfigVersions"
+
+    table.update_item(
+        Key={"PK": f"USER#{user_id}", "SK": f"USER#{user_id}"},
+        UpdateExpression=update_expr,
+        ExpressionAttributeValues=expr_values,
+    )
+
+    # Return updated user
+    updated = table.get_item(Key={"PK": f"USER#{user_id}", "SK": f"USER#{user_id}"})
+    item = updated["Item"]
+
+    result = {
+        "userId": item["userId"],
+        "email": item["email"],
+        "persona": item["persona"],
+        "status": item.get("status", "active"),
+        "createdAt": format_datetime(item.get("createdAt")),
+    }
+    if "allowedConfigVersions" in item:
+        result["allowedConfigVersions"] = item["allowedConfigVersions"]
     return result
 
 
@@ -172,6 +249,45 @@ def delete_user(args):
     return True
 
 
+def get_my_profile(event):
+    """Get the calling user's own profile including allowedConfigVersions."""
+    caller = _get_caller_identity(event)
+    caller_email = caller["email"]
+
+    logger.info(f"Getting profile for caller: {caller_email}")
+
+    table = dynamodb.Table(USERS_TABLE_NAME)
+
+    # Look up by email using GSI
+    response = table.query(
+        IndexName="EmailIndex",
+        KeyConditionExpression=Key("email").eq(caller_email),
+    )
+
+    items = response.get("Items", [])
+    if not items:
+        # User not in DynamoDB yet - return basic profile from Cognito claims
+        logger.info(f"No DynamoDB record for {caller_email}, returning basic profile")
+        return {
+            "userId": caller["username"],
+            "email": caller_email,
+            "persona": _determine_persona_from_cognito_groups(caller["groups"]),
+            "status": "active",
+        }
+
+    item = items[0]
+    result = {
+        "userId": item["userId"],
+        "email": item["email"],
+        "persona": item["persona"],
+        "status": item.get("status", "active"),
+        "createdAt": format_datetime(item.get("createdAt")),
+    }
+    if "allowedConfigVersions" in item:
+        result["allowedConfigVersions"] = item["allowedConfigVersions"]
+    return result
+
+
 def format_datetime(dt_str):
     """Ensure datetime string is valid ISO 8601 with Z suffix for AppSync."""
     if not dt_str:
@@ -182,9 +298,8 @@ def format_datetime(dt_str):
 
 
 def _determine_persona_from_groups(groups):
-    """Determine persona from Cognito groups, using highest precedence."""
+    """Determine persona from Cognito groups response, using highest precedence."""
     group_names = [g["GroupName"] for g in groups]
-    # Check in precedence order
     if ADMIN_GROUP in group_names:
         return "Admin"
     if AUTHOR_GROUP in group_names:
@@ -193,13 +308,33 @@ def _determine_persona_from_groups(groups):
         return "Reviewer"
     if VIEWER_GROUP in group_names:
         return "Viewer"
-    # Default to Viewer for users with no recognized group
     return "Viewer"
 
 
-def list_users():
-    """List all users - sync from Cognito first, then return from DynamoDB."""
-    logger.info("Listing all users")
+def _determine_persona_from_cognito_groups(group_list):
+    """Determine persona from a list of Cognito group name strings."""
+    if "Admin" in group_list:
+        return "Admin"
+    if "Author" in group_list:
+        return "Author"
+    if "Reviewer" in group_list:
+        return "Reviewer"
+    if "Viewer" in group_list:
+        return "Viewer"
+    return "Viewer"
+
+
+def list_users(event):
+    """List users. Admin sees all users; non-admin sees only their own profile."""
+    caller = _get_caller_identity(event)
+
+    # Non-admin users can only see their own profile
+    if not caller["is_admin"]:
+        logger.info(f"Non-admin caller {caller['email']}, returning self only")
+        profile = get_my_profile(event)
+        return {"users": [profile] if profile else []}
+
+    logger.info("Admin listing all users")
 
     # First, sync Cognito users to DynamoDB
     sync_cognito_users_to_dynamodb()

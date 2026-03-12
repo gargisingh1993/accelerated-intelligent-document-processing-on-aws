@@ -15,12 +15,71 @@ import os
 import json
 import logging
 import re
+import time
+
+import boto3
+from boto3.dynamodb.conditions import Key as DDBKey
 
 logger = logging.getLogger()
 logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 logging.getLogger("idp_common.bedrock.client").setLevel(
     os.environ.get("BEDROCK_LOG_LEVEL", "INFO")
 )
+
+# DynamoDB resource for user scope lookups
+_dynamodb = boto3.resource("dynamodb")
+
+# User scope cache (TTL-based, per Lambda container)
+_user_scope_cache = {}
+_USER_SCOPE_CACHE_TTL = 60  # seconds
+
+
+def _get_caller_info(event):
+    """Extract caller's email and groups from AppSync event identity."""
+    identity = event.get("identity", {})
+    claims = identity.get("claims", {})
+    groups = claims.get("cognito:groups", [])
+    username = claims.get("cognito:username", "") or claims.get("sub", "")
+    email = claims.get("email", "") or identity.get("username", "") or username
+    if isinstance(groups, str):
+        groups = [groups]
+    return {
+        "email": email,
+        "username": username,
+        "groups": groups,
+        "is_admin": "Admin" in groups,
+    }
+
+
+def _get_user_allowed_config_versions(caller_email):
+    """Look up user's allowedConfigVersions from UsersTable with caching."""
+    users_table_name = os.environ.get("USERS_TABLE_NAME", "")
+    if not users_table_name:
+        return None
+
+    now = time.time()
+    cached = _user_scope_cache.get(caller_email)
+    if cached and (now - cached["timestamp"]) < _USER_SCOPE_CACHE_TTL:
+        return cached["scope"]
+
+    try:
+        users_table = _dynamodb.Table(users_table_name)
+        response = users_table.query(
+            IndexName="EmailIndex",
+            KeyConditionExpression=DDBKey("email").eq(caller_email),
+        )
+        items = response.get("Items", [])
+        if items:
+            scope = items[0].get("allowedConfigVersions")
+            result = list(scope) if scope and len(scope) > 0 else None
+        else:
+            result = None
+    except Exception as e:
+        logger.warning(f"Failed to look up user scope for {caller_email}: {e}")
+        result = None
+
+    _user_scope_cache[caller_email] = {"scope": result, "timestamp": now}
+    return result
 
 
 def validate_version_name(name):
@@ -71,11 +130,28 @@ def handler(event, context):
     # Initialize ConfigurationManager
     manager = ConfigurationManager()
 
+    # Get caller info for scope enforcement
+    caller = _get_caller_info(event)
+    allowed_versions = None
+    if not caller["is_admin"]:
+        allowed_versions = _get_user_allowed_config_versions(caller["email"])
+        logger.info(f"Config scope for {caller['email']}: {allowed_versions or 'unrestricted'}")
+
     try:
         if operation == "getConfigVersions":
-            return handle_get_config_versions(manager)
+            return handle_get_config_versions(manager, allowed_versions)
         elif operation == "getConfigVersion":
-            return handle_get_configuration(manager, event["arguments"].get("versionName"))
+            version_name = event["arguments"].get("versionName")
+            # Enforce scope on getConfigVersion
+            if allowed_versions and version_name and version_name not in allowed_versions:
+                return {
+                    "success": False,
+                    "error": {
+                        "type": "Unauthorized",
+                        "message": f"Access denied: version '{version_name}' is not in your allowed scope",
+                    },
+                }
+            return handle_get_configuration(manager, version_name)
         elif operation == "updateConfiguration":
             args = event["arguments"]
             version = args.get("versionName")
@@ -615,13 +691,18 @@ def handle_restore_default_pricing(manager):
         }
 
 
-def handle_get_config_versions(manager):
+def handle_get_config_versions(manager, allowed_versions=None):
     """
     Handle the getConfigVersions GraphQL query
-    Returns list of all available configuration versions
+    Returns list of all available configuration versions, filtered by user scope.
     """
     try:
         versions = manager.list_config_versions()
+        
+        # Filter by user's allowed config versions if scope is set
+        if allowed_versions:
+            versions = [v for v in versions if v.get("versionName") in allowed_versions]
+            logger.info(f"Filtered config versions by scope: {len(versions)} versions returned")
         
         return {
             "success": True,
