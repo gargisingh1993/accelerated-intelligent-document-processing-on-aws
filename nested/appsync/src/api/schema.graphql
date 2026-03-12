@@ -626,9 +626,9 @@ type Mutation {
   syncBdaIdp(direction: String, versionName: String, bdaProjectArn: String, saveArn: Boolean, syncMode: String): SyncBdaIdpResponse
     @aws_auth(cognito_groups: ["Admin", "Author"])
   updatePricing(pricingConfig: AWSJSON!): UpdatePricingResponse
-    @aws_auth(cognito_groups: ["Admin", "Author"])
+    @aws_auth(cognito_groups: ["Admin"])
   restoreDefaultPricing: UpdatePricingResponse
-    @aws_auth(cognito_groups: ["Admin", "Author"])
+    @aws_auth(cognito_groups: ["Admin"])
   uploadDocument(
     fileName: String!
     contentType: String
