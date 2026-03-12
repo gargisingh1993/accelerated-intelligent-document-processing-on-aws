@@ -2201,10 +2201,12 @@ const ConfigurationLayout = (): React.JSX.Element => {
                 <Button variant="normal" onClick={() => setShowResetModal(true)} disabled={currentVersionName === 'default'}>
                   Restore default (All)
                 </Button>
-                {/* Disable Save as default when already on default version */}
-                <Button variant="normal" onClick={() => setShowSaveAsDefaultModal(true)} disabled={currentVersionName === 'default'}>
-                  Save as default
-                </Button>
+                {/* Save as default - Admin only */}
+                {isAdmin && (
+                  <Button variant="normal" onClick={() => setShowSaveAsDefaultModal(true)} disabled={currentVersionName === 'default'}>
+                    Save as default
+                  </Button>
+                )}
                 {isAdmin && (
                   <Button variant="normal" onClick={() => setShowSaveAsVersionModal(true)} disabled={validationErrors.length > 0}>
                     Save as Version

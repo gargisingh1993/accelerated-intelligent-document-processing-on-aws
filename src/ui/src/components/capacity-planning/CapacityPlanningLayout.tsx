@@ -203,24 +203,23 @@ const CapacityPlanningLayout = () => {
     }
   }, [configuration]);
 
-  // Set default to active version when versions are loaded
+  // Set default to active version (or first scoped version) when versions are loaded
   useEffect(() => {
     if (versions.length > 0 && !selectedConfigVersion) {
+      const versionOptions = getVersionOptions();
       const activeVersion = versions.find((v) => v.isActive);
       if (activeVersion) {
-        const versionOptions = getVersionOptions();
         const activeVersionOption = versionOptions.find((option) => option.value === activeVersion.versionName);
         if (activeVersionOption) {
           console.log('Setting selected config version to active:', activeVersionOption.value);
           setSelectedConfigVersion(activeVersionOption);
+          return;
         }
-      } else {
-        // Fallback: if no active version found, use 'default'
-        const defaultOption = getVersionOptions().find((opt) => opt.value === 'default');
-        if (defaultOption) {
-          console.log('No active version found, using default');
-          setSelectedConfigVersion(defaultOption);
-        }
+      }
+      // Fallback: select first available (scoped) version
+      if (versionOptions.length > 0) {
+        console.log('Using first available scoped version:', versionOptions[0].value);
+        setSelectedConfigVersion(versionOptions[0]);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
