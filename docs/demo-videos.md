@@ -19,6 +19,7 @@ This page contains all demonstration videos for the GenAI Intelligent Document P
 - [AI Agents & Analytics](#ai-agents--analytics)
 - [Configuration & Management](#configuration--management)
 - [Evaluation & Testing](#evaluation--testing)
+- [Rule Validation](#rule-validation)
 - [Integration & Extensions](#integration--extensions)
 
 ---
@@ -266,6 +267,17 @@ Using the pre-deployed RealKIE-FCC-Verified benchmark dataset with 75 invoice do
 https://github.com/user-attachments/assets/d952fd37-1bd0-437f-8f67-5a634e9422e0
 
 **Related Documentation**: [Test Studio - Pre-Deployed Test Sets](./test-studio.md#pre-deployed-test-sets)
+
+---
+
+## Rule Validation
+
+### Rule Validation Demo
+Automatically validate documents against business rules and compliance requirements using AI. Includes rule extraction from policy documents, configurable rule schemas, and detailed Pass/Fail reporting with supporting evidence.
+
+https://github.com/user-attachments/assets/5d115b90-ff52-4e17-ab70-d259efe5a183
+
+**Related Documentation**: [Rule Validation Documentation](./rule-validation.md)
 
 ---
 

@@ -6,6 +6,17 @@ GREEN := \033[0;32m
 YELLOW := \033[1;33m
 NC := \033[0m  # No Color
 
+# Virtual environment configuration
+VENV_DIR := .venv
+# Use the venv python/pip if the venv exists, otherwise fall back to system
+ifeq ($(wildcard $(VENV_DIR)/bin/python),)
+  PYTHON := $(shell command -v python3 2>/dev/null || pyenv which python 2>/dev/null || echo python)
+  PIP := $(shell command -v pip3 2>/dev/null || echo pip)
+else
+  PYTHON := $(CURDIR)/$(VENV_DIR)/bin/python
+  PIP := $(CURDIR)/$(VENV_DIR)/bin/pip
+endif
+
 # Update version across all packages
 # Usage: make version V=0.6.0
 .PHONY: version
@@ -33,17 +44,33 @@ endif
 # Default target - run both lint and test
 all: lint test
 
-# Install idp_common, idp-cli, and idp_sdk packages in development mode
+# Create virtual environment and install all packages in development mode
 setup:
-	@echo "Installing idp_common package..."
-	pip install -e lib/idp_common_pkg
+	@echo "Creating virtual environment in $(VENV_DIR)..."
+	@PYENV_PYTHON=$$(pyenv which python 2>/dev/null); \
+	SYS_PYTHON=$$(command -v python3 2>/dev/null); \
+	BASE_PYTHON=$${PYENV_PYTHON:-$$SYS_PYTHON}; \
+	if [ -z "$$BASE_PYTHON" ]; then \
+		echo -e "$(RED)ERROR: No python3 or pyenv python found. Install Python 3.12+ first.$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "Using base Python: $$BASE_PYTHON ($$($$BASE_PYTHON --version))"; \
+	$$BASE_PYTHON -m venv $(VENV_DIR)
+	@echo "Upgrading pip..."
+	$(VENV_DIR)/bin/pip install --upgrade pip
+	@echo "Installing idp_common package with all dependencies (including test)..."
+	$(VENV_DIR)/bin/pip install -e "lib/idp_common_pkg[all,dev,test]"
 	@echo "Installing idp-cli package..."
-	pip install -e lib/idp_cli_pkg
+	$(VENV_DIR)/bin/pip install -e lib/idp_cli_pkg
 	@echo "Installing idp_sdk package..."
-	pip install -e lib/idp_sdk
+	$(VENV_DIR)/bin/pip install -e lib/idp_sdk
 	@echo "Installing capacity planning test dependencies..."
-	pip install -r src/lambda/calculate_capacity/requirements-test.txt
-	@echo -e "$(GREEN)✅ Setup complete! idp_common, idp-cli, idp_sdk, and test dependencies are now installed.$(NC)"
+	$(VENV_DIR)/bin/pip install -r src/lambda/calculate_capacity/requirements-test.txt
+	@echo ""
+	@echo -e "$(GREEN)✅ Setup complete! Virtual environment created at $(VENV_DIR)$(NC)"
+	@echo -e "$(GREEN)   idp_common, idp-cli, idp_sdk, and test dependencies are now installed.$(NC)"
+	@echo -e "$(YELLOW)   All 'make' targets will automatically use $(VENV_DIR)/bin/python.$(NC)"
+	@echo -e "$(YELLOW)   To activate manually: source $(VENV_DIR)/bin/activate$(NC)"
 
 # Start the UI development server
 # Usage: make ui-start [STACK_NAME=<stack-name>]
@@ -75,34 +102,34 @@ ui-start:
 
 # Run tests in idp_common_pkg, idp_cli, idp_sdk, capacity planning Lambda, and config library
 test:
-	$(MAKE) -C lib/idp_common_pkg test
-	cd lib/idp_cli_pkg && python -m pytest -v
-	cd lib/idp_sdk && python -m pytest -m "not integration" -v
+	$(MAKE) -C lib/idp_common_pkg test PYTHON=$(PYTHON)
+	cd lib/idp_cli_pkg && $(PYTHON) -m pytest -v
+	cd lib/idp_sdk && $(PYTHON) -m pytest -m "not integration" -v
 	@echo "Running capacity planning Lambda tests..."
-	cd src/lambda/calculate_capacity && python -m pytest -v
+	cd src/lambda/calculate_capacity && $(PYTHON) -m pytest -v
 	@echo "Validating config library files..."
-	python -m pytest config_library/test_config_library.py -v
+	$(PYTHON) -m pytest config_library/test_config_library.py -v
 
 # Run only config library validation tests
 test-config-library:
 	@echo "Validating config library YAML/JSON files..."
-	python -m pytest config_library/test_config_library.py -v
+	$(PYTHON) -m pytest config_library/test_config_library.py -v
 
 # Run only IDP CLI tests
 test-cli:
 	@echo "Running IDP CLI tests..."
-	cd lib/idp_cli_pkg && python -m pytest -v
+	cd lib/idp_cli_pkg && $(PYTHON) -m pytest -v
 	@echo -e "$(GREEN)✅ All CLI tests passed!$(NC)"
 
 # Run only capacity planning tests
 test-capacity:
 	@echo "Running capacity planning Lambda tests..."
-	cd src/lambda/calculate_capacity && python -m pytest -v
+	cd src/lambda/calculate_capacity && $(PYTHON) -m pytest -v
 
 # Run capacity planning tests with coverage
 test-capacity-coverage:
 	@echo "Running capacity planning Lambda tests with coverage..."
-	cd src/lambda/calculate_capacity && python -m pytest --cov=. --cov-report=term --cov-report=html -v
+	cd src/lambda/calculate_capacity && $(PYTHON) -m pytest --cov=. --cov-report=term --cov-report=html -v
 	@echo -e "$(GREEN)✅ Coverage report generated at src/lambda/calculate_capacity/htmlcov/index.html$(NC)"
 
 # Run both linting and formatting in one command
@@ -153,7 +180,7 @@ lint-cicd:
 # Validate AWS CodeBuild buildspec files
 validate-buildspec:
 	@echo "Validating buildspec files..."
-	@python3 scripts/sdlc/validate_buildspec.py patterns/*/buildspec.yml || \
+	@$(PYTHON) scripts/sdlc/validate_buildspec.py patterns/*/buildspec.yml || \
 		(echo -e "$(RED)ERROR: Buildspec validation failed!$(NC)" && exit 1)
 	@echo -e "$(GREEN)✅ All buildspec files are valid!$(NC)"
 
@@ -203,12 +230,12 @@ typecheck-stats:
 TARGET_BRANCH ?= main
 typecheck-pr:
 	@echo "Type checking changed files against $(TARGET_BRANCH)..."
-	python3 scripts/sdlc/typecheck_pr_changes.py $(TARGET_BRANCH)
+	$(PYTHON) scripts/sdlc/typecheck_pr_changes.py $(TARGET_BRANCH)
 
 
 ui-lint:
 	@echo "Checking if UI lint is needed..."
-	@CURRENT_HASH=$$(python3 -c "from publish import IDPPublisher; p = IDPPublisher(); print(p.get_directory_checksum('src/ui'))"); \
+	@CURRENT_HASH=$$($(PYTHON) -c "from publish import IDPPublisher; p = IDPPublisher(); print(p.get_directory_checksum('src/ui'))"); \
 	STORED_HASH=$$(test -f src/ui/.checksum && cat src/ui/.checksum || echo ""); \
 	if [ "$$CURRENT_HASH" != "$$STORED_HASH" ]; then \
 		echo "UI code checksum changed - running lint..."; \
@@ -247,17 +274,19 @@ codegen-check:
 	fi
 
 commit: lint test
-	$(info Generating commit message...)
-	export COMMIT_MESSAGE="$(shell kiro-cli chat --no-interactive --trust-all-tools "Understand pending local git change and changes to be committed, then infer a commit message. Return this commit message only on a single line." | grep ">" | tail -n 1 | sed 's/\x1b\[[0-9;]*m//g')" && \
-	git add . && \
-	git commit -am "$${COMMIT_MESSAGE}" && \
+	@echo "Generating commit message via Bedrock..."
+	@git add . && \
+	COMMIT_MESSAGE=$$(bash scripts/generate_commit_message.sh) && \
+	echo "Commit message: $$COMMIT_MESSAGE" && \
+	git commit -m "$$COMMIT_MESSAGE" && \
 	git push
 
 fastcommit: fastlint
-	$(info Generating commit message...)
-	export COMMIT_MESSAGE="$(shell kiro-cli chat --no-interactive --trust-all-tools "Understand pending local git change and changes to be committed, then infer a commit message. Return this commit message only on a single line." | grep ">" | tail -n 1 | sed 's/\x1b\[[0-9;]*m//g')" && \
-	git add . && \
-	git commit -am "$${COMMIT_MESSAGE}" && \
+	@echo "Generating commit message via Bedrock..."
+	@git add . && \
+	COMMIT_MESSAGE=$$(bash scripts/generate_commit_message.sh) && \
+	echo "Commit message: $$COMMIT_MESSAGE" && \
+	git commit -m "$$COMMIT_MESSAGE" && \
 	git push
 
 # Build and serve the documentation site locally
@@ -290,21 +319,21 @@ docs-deploy: docs-build
 # Fetches all AWS standard blueprints and converts them to IDP class schemas
 classes-from-bda:
 	@echo "Generating standard class catalog from BDA standard blueprints..."
-	python3 scripts/generate_standard_classes.py --region us-east-1 --output src/ui/src/data/standard-classes.json
+	$(PYTHON) scripts/generate_standard_classes.py --region us-east-1 --output src/ui/src/data/standard-classes.json
 	@echo -e "$(GREEN)✅ Standard class catalog updated! Review changes in src/ui/src/data/standard-classes.json$(NC)"
 
 # DSR (Deliverable Security Review) targets
 dsr-setup:
 	@echo "Setting up DSR tool..."
-	python3 scripts/dsr/setup.py
+	$(PYTHON) scripts/dsr/setup.py
 
 dsr-scan:
 	@echo "Running DSR security scan..."
-	python3 scripts/dsr/run.py
+	$(PYTHON) scripts/dsr/run.py
 
 dsr-fix:
 	@echo "Running DSR interactive fix..."
-	python3 scripts/dsr/fix.py
+	$(PYTHON) scripts/dsr/fix.py
 
 dsr:
 	@if [ ! -f .dsr/dsr ]; then \
