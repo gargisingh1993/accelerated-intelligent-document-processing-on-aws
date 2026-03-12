@@ -23,6 +23,7 @@ import Editor from '@monaco-editor/react';
 // eslint-disable-next-line import/no-extraneous-dependencies
 import yaml from 'js-yaml';
 import usePricing from '../../hooks/use-pricing';
+import useUserRole from '../../hooks/use-user-role';
 
 interface PricingUnit {
   name: string;
@@ -51,6 +52,7 @@ interface PricingTableItem {
 
 const PricingLayout = (): React.JSX.Element => {
   const { pricing, defaultPricing, loading, refreshing, error, updatePricing, fetchPricing, restoreDefaultPricing } = usePricing();
+  const { isAdmin } = useUserRole();
 
   const [formValues, setFormValues] = useState<PricingFormValues>({ pricing: [] });
   const [jsonContent, setJsonContent] = useState('');
@@ -721,23 +723,33 @@ const PricingLayout = (): React.JSX.Element => {
                 <Button variant="normal" onClick={() => setShowExportModal(true)}>
                   Export
                 </Button>
-                <Button variant="normal" onClick={() => document.getElementById('import-pricing-file')?.click()}>
-                  Import
-                </Button>
-                <input id="import-pricing-file" type="file" accept=".json,.yaml,.yml" style={{ display: 'none' }} onChange={handleImport} />
-                <Button variant="normal" onClick={() => setShowAddServiceModal(true)}>
-                  Add Service/API
-                </Button>
-                <Button variant="normal" onClick={() => setShowRestoreModal(true)} disabled={!hasCustomizations()}>
-                  Restore default (All)
-                </Button>
-                <Button variant="primary" onClick={handleSave} loading={isSaving}>
-                  Save changes
-                </Button>
+                {isAdmin && (
+                  <>
+                    <Button variant="normal" onClick={() => document.getElementById('import-pricing-file')?.click()}>
+                      Import
+                    </Button>
+                    <input
+                      id="import-pricing-file"
+                      type="file"
+                      accept=".json,.yaml,.yml"
+                      style={{ display: 'none' }}
+                      onChange={handleImport}
+                    />
+                    <Button variant="normal" onClick={() => setShowAddServiceModal(true)}>
+                      Add Service/API
+                    </Button>
+                    <Button variant="normal" onClick={() => setShowRestoreModal(true)} disabled={!hasCustomizations()}>
+                      Restore default (All)
+                    </Button>
+                    <Button variant="primary" onClick={handleSave} loading={isSaving}>
+                      Save changes
+                    </Button>
+                  </>
+                )}
               </SpaceBetween>
             }
           >
-            Pricing Configuration
+            {isAdmin ? 'Pricing Configuration' : 'View Pricing'}
           </Header>
         }
       >
