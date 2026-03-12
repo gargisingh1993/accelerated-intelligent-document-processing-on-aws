@@ -28,6 +28,7 @@ import { ConsoleLogger } from 'aws-amplify/utils';
 import useConfiguration from '../../hooks/use-configuration';
 import useConfigurationVersions from '../../hooks/use-configuration-versions';
 import useConfigurationLibrary from '../../hooks/use-configuration-library';
+import useUserRole from '../../hooks/use-user-role';
 import useSettingsContext from '../../contexts/settings';
 import ConfigBuilder from './ConfigBuilder';
 import ConfigurationVersionsTable from './ConfigurationVersionsTable';
@@ -167,10 +168,17 @@ const ConfigurationLayout = (): React.JSX.Element => {
     saveAsNewVersion,
   } = useConfigurationVersions();
 
-  // Get active version name
+  // Get user role for scope and permissions
+  const { isAdmin } = useUserRole();
+
+  // Get active version name — prefer first scoped version over system active
   const activeVersionName = useMemo(() => {
-    const activeVersion = versions.find((v) => v.isActive);
-    return activeVersion?.versionName || 'default';
+    if (versions.length > 0) {
+      // If versions are scope-filtered, prefer the first one (or the active one if in scope)
+      const activeVersion = versions.find((v) => v.isActive);
+      return activeVersion?.versionName || versions[0].versionName;
+    }
+    return 'default';
   }, [versions]);
 
   // Version description state
@@ -2197,9 +2205,11 @@ const ConfigurationLayout = (): React.JSX.Element => {
                 <Button variant="normal" onClick={() => setShowSaveAsDefaultModal(true)} disabled={currentVersionName === 'default'}>
                   Save as default
                 </Button>
-                <Button variant="normal" onClick={() => setShowSaveAsVersionModal(true)} disabled={validationErrors.length > 0}>
-                  Save as Version
-                </Button>
+                {isAdmin && (
+                  <Button variant="normal" onClick={() => setShowSaveAsVersionModal(true)} disabled={validationErrors.length > 0}>
+                    Save as Version
+                  </Button>
+                )}
                 {/* Disable Save changes when on default version */}
                 <Button
                   variant="primary"

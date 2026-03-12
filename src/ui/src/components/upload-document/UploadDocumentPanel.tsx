@@ -43,17 +43,21 @@ const UploadDocumentPanel = (): React.JSX.Element => {
   const [prefix, setPrefix] = useState('');
   const [selectedVersion, setSelectedVersion] = useState<SelectProps.Option | null>(null);
 
-  // Set default to active version when versions are loaded
+  // Set default to active version (or first scoped version) when versions are loaded
   useEffect(() => {
     if (versions.length > 0 && !selectedVersion) {
+      const versionOptions = getVersionOptions();
       const activeVersion = versions.find((v) => v.isActive);
       if (activeVersion) {
-        // Use the same logic as getVersionOptions to ensure consistency
-        const versionOptions = getVersionOptions();
         const activeVersionOption = versionOptions.find((option) => option.value === activeVersion.versionName);
         if (activeVersionOption) {
           setSelectedVersion(activeVersionOption);
+          return;
         }
+      }
+      // Fallback: select first available (scoped) version
+      if (versionOptions.length > 0) {
+        setSelectedVersion(versionOptions[0]);
       }
     }
   }, [versions, selectedVersion, getVersionOptions]);
